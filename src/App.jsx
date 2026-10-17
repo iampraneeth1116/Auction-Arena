@@ -8,6 +8,7 @@ import Spinner from './components/ui/Spinner';
 import LandingPage from './pages/LandingPage';
 
 // Everything except the landing page loads when first visited
+const Lobby = lazy(() => import('./pages/Lobby'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -26,6 +27,7 @@ function App() {
             <Suspense fallback={<Spinner className="min-h-dvh" />}>
               <Routes>
                 <Route path="/" element={<LandingPage />} />
+                <Route path="/lobby/:id" element={<Lobby />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </Suspense>

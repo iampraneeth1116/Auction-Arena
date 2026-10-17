@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { ArrowLeft, ArrowRight, Mail, UserRound } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, Check, Gavel, LogIn, Mail, UserRound } from 'lucide-react';
 import PageShell from '../components/ui/PageShell';
 import Panel from '../components/ui/Panel';
 import Button from '../components/ui/Button';
 import Field from '../components/ui/Field';
 import Tag from '../components/ui/Tag';
+import Segmented from '../components/ui/Segmented';
 import TeamCrest from '../components/ui/TeamCrest';
 import PlayerPhoto from '../components/ui/PlayerPhoto';
 import RatingBadge from '../components/ui/RatingBadge';
@@ -13,7 +15,9 @@ import GoogleMark from '../components/ui/GoogleMark';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { api } from '../lib/api';
 import { ratingOf } from '../lib/catalog';
+import { cn } from '../lib/cn';
 import { TEAMS } from '../data/teams';
 import { IPL_PLAYERS } from '../data/players';
 
@@ -85,6 +89,95 @@ const SignInPanel = () => {
   );
 };
 
+// ─── Signed in: host a room or join one ───
+
+const HostTab = () => {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const [teamId, setTeamId] = useState(TEAMS[0].id);
+  const [busy, setBusy] = useState(false);
+
+  const create = async () => {
+    setBusy(true);
+    try {
+      const { id } = await api('/api/rooms', { method: 'POST', body: { teamId } });
+      navigate(`/lobby/${id}`);
+    } catch (err) {
+      toast({ message: err.message, tone: 'error' });
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-mist">Pick your franchise. Friends join with the room code and pick theirs.</p>
+      <div className="grid grid-cols-5 gap-2">
+        {TEAMS.map(team => (
+          <button
+            key={team.id}
+            onClick={() => setTeamId(team.id)}
+            aria-pressed={team.id === teamId}
+            className={cn('relative flex flex-col items-center gap-1 rounded-md border p-2 transition-colors cursor-pointer',
+              team.id === teamId ? 'border-signal bg-signal/10' : 'border-white/8 hover:border-ink-500')}
+          >
+            <TeamCrest teamId={team.id} size="md" className="border-0" />
+            <span className="font-display text-xs font-bold">{team.id}</span>
+            {team.id === teamId && <Check size={12} className="absolute right-1 top-1 text-signal" />}
+          </button>
+        ))}
+      </div>
+      <Button size="lg" block slant icon={Gavel} loading={busy} onClick={create}>Create room</Button>
+    </div>
+  );
+};
+
+const JoinTab = () => {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const join = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const { id } = await api(`/api/rooms/${encodeURIComponent(code)}/join`, { method: 'POST', body: {} });
+      navigate(`/lobby/${id}`);
+    } catch (err) {
+      toast({ message: err.message, tone: 'error' });
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form onSubmit={join} className="space-y-3">
+      <Field
+        label="Room code"
+        placeholder="ABC123"
+        value={code}
+        onChange={e => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6))}
+        inputClassName="font-display text-xl tracking-[0.3em]"
+      />
+      <Button type="submit" size="lg" block icon={LogIn} loading={busy} disabled={code.length !== 6}>Join room</Button>
+    </form>
+  );
+};
+
+const ControlRoom = ({ user }) => {
+  const [tab, setTab] = useState('host');
+  return (
+    <Panel label={`Welcome, ${user.displayName}`} accent="volt" className="w-full max-w-md" bodyClassName="space-y-4 p-4 sm:p-5">
+      <Segmented
+        options={[{ id: 'host', label: 'Host', icon: Gavel }, { id: 'join', label: 'Join', icon: LogIn }]}
+        value={tab}
+        onChange={setTab}
+        stretch
+      />
+      {tab === 'host' ? <HostTab /> : <JoinTab />}
+    </Panel>
+  );
+};
+
 const LandingPage = () => {
   useDocumentTitle();
   const { user } = useAuth();
@@ -111,11 +204,7 @@ const LandingPage = () => {
         </div>
 
         {user ? (
-          <Panel label="Welcome" accent="volt" bodyClassName="space-y-2 p-4 sm:p-5">
-            <p className="font-display text-2xl font-bold uppercase">Hi, {user.displayName}</p>
-            <p className="text-sm text-mist">Hosting and joining rooms is coming next.</p>
-            <ArrowRight className="text-volt" size={18} />
-          </Panel>
+          <ControlRoom user={user} />
         ) : (
           <SignInPanel />
         )}

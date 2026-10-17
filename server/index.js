@@ -7,6 +7,7 @@ import cookieParser from 'cookie-parser';
 import { config } from './config.js';
 import { prisma } from './db.js';
 import authRoutes from './routes/auth.js';
+import roomRoutes from './routes/rooms.js';
 
 const app = express();
 // Hosts like Render put one proxy in front: needed for real client IPs
@@ -25,6 +26,7 @@ app.get('/api/health', async (req, res) => {
   }
 });
 app.use('/api/auth', authRoutes);
+app.use('/api', roomRoutes);
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 
 // In production this same server hosts the built React app (one origin for everything)
