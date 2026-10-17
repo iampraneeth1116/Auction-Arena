@@ -42,6 +42,9 @@ export function createSocketServer(httpServer) {
       return rt;
     };
 
+    // Lets clients line their countdowns up with the server clock
+    handle('time:sync', async () => ({ serverTime: Date.now() }));
+
     // Subscribes this connection to the room's live state
     handle('room:join', async ({ roomId }) => {
       const rt = await loadRoom(roomId);
@@ -67,6 +70,8 @@ export function createSocketServer(httpServer) {
     handle('team:select', async ({ roomId, teamId }) => rooms.selectTeam(await loadRoom(roomId), user.id, teamId));
     handle('settings:update', async ({ roomId, bidTimer }) => rooms.updateSettings(await loadRoom(roomId), user.id, { bidTimer }));
     handle('member:kick', async ({ roomId, userId }) => rooms.kickMember(await loadRoom(roomId), user.id, userId));
+    handle('auction:start', async ({ roomId }) => rooms.startAuction(await loadRoom(roomId), user.id));
+    handle('bid:place', async ({ roomId, amount }) => rooms.placeBid(await loadRoom(roomId), user.id, amount));
     handle('chat:send', async ({ roomId, text, type }) => rooms.sendChat(await loadRoom(roomId), user.id, { text, type }));
 
     socket.on('disconnect', () => {

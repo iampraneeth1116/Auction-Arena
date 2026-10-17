@@ -1,12 +1,27 @@
 import crypto from 'node:crypto';
 import { prisma } from '../db.js';
+import { IPL_PLAYERS } from '../../src/data/players.js';
 import { HttpError } from '../validation.js';
-import { AUCTION_MODES, DEFAULT_BID_TIMER, MAX_BID_TIMER, MIN_BID_TIMER, TEAMS_BY_ID, toCrores } from '../auctionRules.js';
+import {
+  AUCTION_MODES,
+  DEFAULT_BID_TIMER,
+  FIRST_PLAYER_MS,
+  MAX_BID_TIMER,
+  MIN_BID_TIMER,
+  PLAYERS_BY_ID,
+  SOLD_CARD_MS,
+  TEAMS_BY_ID,
+  UNSOLD_CARD_MS,
+  buildPlayerOrder,
+  nextBidLakhs,
+  toCrores,
+  toLakhs,
+} from '../auctionRules.js';
 
-// The server owns every room. Each room lives in memory while someone is in it
-// and every change is written to Postgres first, so nothing is lost on a restart.
-// This is single-process state: running more than one server instance would
-// need a shared store (e.g. Redis) first.
+// The server owns every auction: it runs the countdown, takes bids, sells
+// players and moves to the next one. Each room lives in memory while in use and
+// every change is written to Postgres first. This is single-process state:
+// running more than one server instance would need a shared store (e.g. Redis) first.
 
 const MESSAGE_HISTORY = 200;
 const CHAT_MIN_INTERVAL_MS = 500;
@@ -34,10 +49,16 @@ function toRuntime(row) {
       overseasLimit: row.overseasLimit,
       budget: row.budget,
       bidTimer: row.bidTimer,
+      playerOrder: row.playerOrder,
+      currentIndex: row.currentIndex,
       bannedUserIds: row.bannedUserIds,
       createdAt: row.createdAt,
     },
     members: new Map(row.members.map(m => [m.userId, m])),
+    purchases: row.purchases,
+    // The player under the hammer: bid, high bidder, deadline and status
+    live: row.liveState ?? null,
+    timer: null,
     // userId → open connections, so a second tab doesn't flip someone offline
     presence: new Map(),
     lastChatAt: new Map(),
@@ -58,7 +79,10 @@ export async function getRuntime(roomId) {
 }
 
 async function loadRuntime(roomId) {
-  const row = await prisma.room.findUnique({ where: { id: roomId }, include: { members: true } });
+  const row = await prisma.room.findUnique({
+    where: { id: roomId },
+    include: { members: true, purchases: { orderBy: { createdAt: 'asc' } } },
+  });
   if (!row) return null;
   const rt = toRuntime(row);
   runtimes.set(roomId, rt);
@@ -88,6 +112,8 @@ export function getSnapshot(rt) {
     squadLimit: room.squadLimit,
     overseasLimit: room.overseasLimit,
     settings: { bidTimer: room.bidTimer, budget: toCrores(room.budget) },
+    playerOrder: room.playerOrder,
+    currentIndex: room.currentIndex,
     bannedPlayers: room.bannedUserIds,
     players: members.map(m => ({
       id: m.userId,
@@ -104,8 +130,9 @@ export function getSnapshot(rt) {
       teamId: m.teamId,
       teamName: teamName(m.teamId),
       budgetRemaining: toCrores(m.budgetRemaining),
-      squad: [],
+      squad: squadOf(rt, m).map(p => ({ id: p.playerId, bid: toCrores(p.price) })),
     })),
+    currentAuction: rt.live ? { ...rt.live, currentBid: toCrores(rt.live.currentBid) } : null,
   };
 }
 
@@ -153,10 +180,153 @@ export function removePresence(rt, userId) {
   else rt.presence.delete(userId);
   broadcast(rt);
 
-  // Free memory for rooms nobody has open; the next visitor loads them again
+  // Free memory for rooms nobody has open; the next visitor loads them again.
+  // A running auction stays: its clock keeps going with nobody watching.
   rt.queue.then(() => {
-    if (rt.presence.size === 0 && runtimes.get(rt.room.id) === rt) runtimes.delete(rt.room.id);
+    if (rt.presence.size === 0 && rt.room.status !== 'active' && runtimes.get(rt.room.id) === rt) {
+      clearTimer(rt);
+      runtimes.delete(rt.room.id);
+    }
   });
+}
+
+// ─── The auction clock ───
+
+function clearTimer(rt) {
+  if (rt.timer) {
+    clearTimeout(rt.timer);
+    rt.timer = null;
+  }
+}
+
+// Arms the one timer a room needs for what it's doing now: closing bidding on
+// the current player, or moving on from the SOLD / UNSOLD card
+function scheduleNext(rt) {
+  clearTimer(rt);
+  const { live, room } = rt;
+  if (room.status !== 'active' || !live) return;
+
+  let dueAt;
+  let task;
+  if (live.status === 'bidding') {
+    dueAt = live.timerEndsAt;
+    task = resolvePlayer;
+  } else if (live.status === 'sold' || live.status === 'unsold') {
+    dueAt = live.resolvedAt + (live.status === 'sold' ? SOLD_CARD_MS : UNSOLD_CARD_MS);
+    task = advance;
+  } else {
+    return;
+  }
+
+  rt.timer = setTimeout(() => {
+    rt.timer = null;
+    exclusive(rt, () => task(rt)).catch((err) => {
+      console.error(`[room ${room.id}] ${task.name} failed, retrying`, err);
+      rt.timer = setTimeout(() => scheduleNext(rt), 2000);
+    });
+  }, Math.max(0, dueAt - Date.now()));
+}
+
+async function startPlayer(rt, index, durationMs) {
+  const player = IPL_PLAYERS[rt.room.playerOrder[index]];
+  const live = {
+    playerId: player.id,
+    currentBid: 0,
+    highBidderId: '',
+    highBidderName: 'No Bids',
+    highBidderTeamId: '',
+    timerEndsAt: Date.now() + durationMs,
+    status: 'bidding',
+    resolvedAt: null,
+  };
+  await prisma.room.update({ where: { id: rt.room.id }, data: { currentIndex: index, liveState: live } });
+  rt.room.currentIndex = index;
+  rt.live = live;
+  broadcast(rt);
+  scheduleNext(rt);
+}
+
+async function resolvePlayer(rt) {
+  const { live, room } = rt;
+  if (room.status !== 'active' || live?.status !== 'bidding') return;
+  // A bid that landed after this timer was armed moved the deadline
+  if (live.timerEndsAt > Date.now()) return scheduleNext(rt);
+
+  const player = PLAYERS_BY_ID.get(live.playerId);
+  const buyer = live.highBidderId ? rt.members.get(live.highBidderId) : null;
+  const resolvedAt = Date.now();
+
+  if (buyer?.teamId && buyer.budgetRemaining >= live.currentBid) {
+    const soldLive = { ...live, status: 'sold', resolvedAt };
+    // One transaction, so a crash can never record the sale without charging the purse or vice versa
+    const [purchase] = await prisma.$transaction([
+      prisma.purchase.create({
+        data: { roomId: room.id, memberId: buyer.id, playerId: player.id, price: live.currentBid },
+      }),
+      prisma.roomMember.update({
+        where: { id: buyer.id },
+        data: { budgetRemaining: { decrement: live.currentBid } },
+      }),
+      prisma.room.update({ where: { id: room.id }, data: { liveState: soldLive } }),
+    ]);
+    rt.purchases.push(purchase);
+    buyer.budgetRemaining -= live.currentBid;
+    rt.live = soldLive;
+
+    const team = TEAMS_BY_ID.get(buyer.teamId);
+    await addMessage(rt, {
+      type: 'sold_card',
+      text: `${player.name} SOLD to ${team?.name || buyer.displayName} for ₹${toCrores(live.currentBid)} Cr`,
+      metadata: { playerId: player.id, teamId: buyer.teamId, bid: toCrores(live.currentBid), buyerId: buyer.userId },
+    });
+  } else {
+    const unsoldLive = { ...live, status: 'unsold', resolvedAt };
+    await prisma.room.update({ where: { id: room.id }, data: { liveState: unsoldLive } });
+    rt.live = unsoldLive;
+    await addMessage(rt, { text: `${player.name} UNSOLD` });
+  }
+
+  broadcast(rt);
+  scheduleNext(rt);
+}
+
+async function advance(rt) {
+  const { live, room } = rt;
+  if (room.status !== 'active' || (live?.status !== 'sold' && live?.status !== 'unsold')) return;
+
+  const nextIndex = room.currentIndex + 1;
+  if (nextIndex >= room.playerOrder.length) {
+    return completeRoom(rt, 'Auction completed — every player has gone under the hammer');
+  }
+  await startPlayer(rt, nextIndex, room.bidTimer * 1000);
+}
+
+async function completeRoom(rt, text) {
+  clearTimer(rt);
+  await prisma.room.update({ where: { id: rt.room.id }, data: { status: 'completed' } });
+  rt.room.status = 'completed';
+  await addMessage(rt, { text });
+  broadcast(rt);
+}
+
+// ─── Bids ───
+
+const squadOf = (rt, member) => rt.purchases.filter(p => p.memberId === member.id);
+
+async function commitBid(rt, member, amount) {
+  const nextLive = {
+    ...rt.live,
+    currentBid: amount,
+    highBidderId: member.userId,
+    highBidderName: member.displayName,
+    highBidderTeamId: member.teamId,
+    // Every bid gives the room the full timer again
+    timerEndsAt: Date.now() + rt.room.bidTimer * 1000,
+  };
+  await prisma.room.update({ where: { id: rt.room.id }, data: { liveState: nextLive } });
+  rt.live = nextLive;
+  broadcast(rt);
+  scheduleNext(rt);
 }
 
 // ─── Guards ───
@@ -240,6 +410,9 @@ export function selectTeam(rt, userId, teamId) {
     if (!TEAMS_BY_ID.has(teamId)) throw new HttpError(400, 'Unknown franchise');
     if (rt.room.status === 'completed') throw new HttpError(409, 'This auction has already ended.');
     if (member.teamId === teamId) return;
+    if (squadOf(rt, member).length > 0) {
+      throw new HttpError(409, "You can't switch franchises after buying players");
+    }
     if ([...rt.members.values()].some(m => m.teamId === teamId)) {
       throw new HttpError(409, 'That franchise is already taken');
     }
@@ -283,12 +456,22 @@ export function kickMember(rt, hostId, targetUserId) {
     if (!target) throw new HttpError(404, 'That player is not in this room');
 
     const bannedUserIds = [...new Set([...rt.room.bannedUserIds, targetUserId])];
+    // A removed manager can't stay the high bidder
+    const nextLive = rt.live?.highBidderId === targetUserId && rt.live.status !== 'sold'
+      ? { ...rt.live, currentBid: 0, highBidderId: '', highBidderName: 'No Bids', highBidderTeamId: '' }
+      : rt.live;
     await prisma.$transaction([
       prisma.roomMember.delete({ where: { id: target.id } }),
-      prisma.room.update({ where: { id: rt.room.id }, data: { bannedUserIds } }),
+      prisma.room.update({
+        where: { id: rt.room.id },
+        data: { bannedUserIds, ...(nextLive !== rt.live && { liveState: nextLive }) },
+      }),
     ]);
     rt.members.delete(targetUserId);
+    // Their purchases go with them (the database cascade deletes them too)
+    rt.purchases = rt.purchases.filter(p => p.memberId !== target.id);
     rt.room.bannedUserIds = bannedUserIds;
+    rt.live = nextLive;
     rt.presence.delete(targetUserId);
 
     // Every tab they have open leaves the room at once
@@ -296,6 +479,49 @@ export function kickMember(rt, hostId, targetUserId) {
     io?.in(userChannel(targetUserId)).socketsLeave(roomChannel(rt.room.id));
     await addMessage(rt, { text: `${target.displayName} has been removed from the room.` });
     broadcast(rt);
+  });
+}
+
+export function startAuction(rt, userId) {
+  return exclusive(rt, async () => {
+    requireHost(rt, userId);
+    if (rt.room.status !== 'waiting') throw new HttpError(409, 'The auction has already started');
+    const managed = [...rt.members.values()].filter(m => m.teamId).length;
+    if (managed < 2) throw new HttpError(409, 'At least 2 franchises need a manager to start');
+
+    const playerOrder = buildPlayerOrder();
+    await prisma.room.update({
+      where: { id: rt.room.id },
+      data: { status: 'active', playerOrder, currentIndex: 0 },
+    });
+    rt.room.status = 'active';
+    rt.room.playerOrder = playerOrder;
+    await addMessage(rt, { text: 'Auction has started!' });
+    await startPlayer(rt, 0, FIRST_PLAYER_MS);
+  });
+}
+
+// expectedAmount is the price (in crores) the bidder saw on their button
+export function placeBid(rt, userId, expectedAmount) {
+  return exclusive(rt, async () => {
+    const { room, live } = rt;
+    assertNotBanned(rt, userId);
+    const member = requireMember(rt, userId);
+    if (!member.teamId) throw new HttpError(400, 'Pick a franchise in the lobby to take part');
+    if (room.status !== 'active' || live?.status !== 'bidding' || live.timerEndsAt <= Date.now()) {
+      throw new HttpError(409, 'Auction is not accepting bids right now.');
+    }
+    if (live.highBidderId === userId) throw new HttpError(409, 'You are already the highest bidder!');
+
+    const player = PLAYERS_BY_ID.get(live.playerId);
+    const amount = nextBidLakhs(live.currentBid, player);
+    // Someone bid first: never charge more than the price the bidder's button showed
+    if (expectedAmount !== undefined && toLakhs(expectedAmount) !== amount) {
+      throw new HttpError(409, 'Bid not accepted — the price has moved. Try again.');
+    }
+
+    await commitBid(rt, member, amount);
+    return { currentBid: toCrores(amount) };
   });
 }
 

@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { api } from '../lib/api';
-import { connectSocket, emitWithAck, getSocket } from '../lib/socket';
+import { connectSocket, emitWithAck, getServerTime, getSocket } from '../lib/socket';
 import { AuctionContext } from '../hooks/useAuction';
 import { useAuth } from '../hooks/useAuth';
 
@@ -16,6 +16,8 @@ export const AuctionProvider = ({ children }) => {
   const [roomError, setRoomError] = useState(null);
 
   const team = user ? roomTeams.find(t => t.userId === user.uid) || null : null;
+
+  const getSyncedTime = useCallback(() => getServerTime(), []);
 
   const createRoom = useCallback(async ({ teamId, auctionType = 'mega' }) => {
     const { id } = await api('/api/rooms', { method: 'POST', body: { teamId, auctionType } });
@@ -104,6 +106,17 @@ export const AuctionProvider = ({ children }) => {
     []
   );
 
+  const startAuction = useCallback(
+    (roomId) => emitWithAck('auction:start', { roomId }),
+    []
+  );
+
+  // amount is the price shown on the bid button; the server rejects it if the price has moved
+  const placeBid = useCallback(async (amount) => {
+    if (!currentAuction) throw new Error('Auction not found!');
+    await emitWithAck('bid:place', { roomId: currentAuction.id, amount });
+  }, [currentAuction]);
+
   // settings: { bidTimer } — anything left out keeps its current value
   const updateRoomSettings = useCallback(
     (roomId, settings) => emitWithAck('settings:update', { roomId, ...settings }),
@@ -127,10 +140,13 @@ export const AuctionProvider = ({ children }) => {
     loading,
     roomError,
     messages,
+    getSyncedTime,
     createRoom,
     joinRoom,
     joinAuction,
     selectTeam,
+    startAuction,
+    placeBid,
     updateRoomSettings,
     kickPlayer,
     sendMessage,

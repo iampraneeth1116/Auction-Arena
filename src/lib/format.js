@@ -17,3 +17,19 @@ export const MODE_META = {
 
 // Seconds per bid the host can pick from
 export const BID_TIMER_PRESETS = [3, 5, 10, 15, 20, 30];
+
+export const isOverseas = (player) => Boolean(player) && player.country !== 'IND';
+
+export const ROLE_META = {
+  'Batsman': { short: 'BAT', label: 'Batter' },
+  'Wicket-Keeper': { short: 'WK', label: 'Keeper' },
+  'All-Rounder': { short: 'AR', label: 'All-rounder' },
+  'Bowler': { short: 'BOWL', label: 'Bowler' },
+};
+
+// Same increments the server uses: base price first, then +20 L under ₹5 Cr, +25 L above
+export function nextBid(currentBid, basePrice) {
+  if (!currentBid) return basePrice;
+  const step = currentBid < 5 ? 0.2 : 0.25;
+  return Math.round((currentBid + step) * 100) / 100;
+}

@@ -2,6 +2,19 @@ import { io } from 'socket.io-client';
 import { refreshSession } from './api';
 
 let socket = null;
+let clockOffset = 0;
+
+// The server owns every deadline; this only keeps countdowns on screen in step with it
+export const getServerTime = () => Date.now() + clockOffset;
+
+function syncClock(activeSocket) {
+  const sentAt = Date.now();
+  activeSocket.emit('time:sync', {}, (res) => {
+    if (!res?.serverTime) return;
+    // Assume the round trip took equally long each way
+    clockOffset = res.serverTime - (sentAt + Date.now()) / 2;
+  });
+}
 
 export function getSocket() {
   if (socket) return socket;
@@ -11,6 +24,7 @@ export function getSocket() {
 
   created.on('connect', () => {
     refreshedForThisAttempt = false;
+    syncClock(created);
   });
 
   // A rejected handshake is not retried automatically: refresh the session once, then reconnect

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Check, Copy, Crown, Hourglass, House, Loader2, MessageSquare, RotateCw, SearchX, ShieldX, Timer, UserMinus, UserRound, Users } from 'lucide-react';
+import { Check, Copy, Crown, Gavel, Hourglass, House, Loader2, MessageSquare, RotateCw, SearchX, ShieldX, Timer, UserMinus, UserRound, Users } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useAuction } from '../hooks/useAuction';
 import { useToast } from '../hooks/useToast';
@@ -194,37 +194,49 @@ const WaitingPanel = ({ isHost, hostName, myTeam }) => (
   </Panel>
 );
 
-const HostControls = ({ room, busy, onTimer }) => {
+const HostControls = ({ room, busy, managedCount, canStart, onStart, onTimer }) => {
   const bidTimer = room.settings?.bidTimer;
   return (
-    <Panel label="Host controls" accent="signal" bodyClassName="space-y-2.5 p-4">
-      <div className="flex items-baseline justify-between gap-3">
-        <h3 className={cn(labelClasses, 'flex items-center gap-2')}>
-          <Timer size={15} className="text-signal" aria-hidden /> Bid timer
-        </h3>
-        <span className="tabular text-sm text-mist">{bidTimer}s per bid</span>
+    <Panel label="Host controls" accent="signal" bodyClassName="divide-y divide-white/6">
+      <div className="space-y-2 p-4">
+        <Button variant="volt" size="lg" slant block icon={Gavel} loading={busy === 'start'} disabled={!canStart || Boolean(busy)} onClick={onStart}>
+          Start auction
+        </Button>
+        <p className="text-center text-xs text-haze">
+          {canStart
+            ? `${managedCount} of ${TEAM_COUNT} franchises will take part.`
+            : 'You need at least 2 managed franchises to start. Invite friends to join.'}
+        </p>
       </div>
-      <div role="group" aria-label="Bid timer in seconds" className="grid grid-cols-6 gap-1">
-        {BID_TIMER_PRESETS.map((seconds) => {
-          const active = seconds === bidTimer;
-          return (
-            <button
-              key={seconds}
-              type="button"
-              aria-pressed={active}
-              disabled={Boolean(busy)}
-              onClick={() => !active && onTimer(seconds)}
-              className={cn(
-                'flex h-9 items-center justify-center rounded-md border font-display text-sm font-semibold tabular transition-colors cursor-pointer disabled:cursor-default',
-                active ? 'border-signal bg-signal/15 text-signal' : 'border-ink-500 text-mist hover:border-signal/60 hover:text-snow',
-              )}
-            >
-              {busy === `timer:${seconds}` ? <Loader2 size={14} className="animate-spin" /> : `${seconds}s`}
-            </button>
-          );
-        })}
+      <div className="space-y-2.5 p-4">
+        <div className="flex items-baseline justify-between gap-3">
+          <h3 className={cn(labelClasses, 'flex items-center gap-2')}>
+            <Timer size={15} className="text-signal" aria-hidden /> Bid timer
+          </h3>
+          <span className="tabular text-sm text-mist">{bidTimer}s per bid</span>
+        </div>
+        <div role="group" aria-label="Bid timer in seconds" className="grid grid-cols-6 gap-1">
+          {BID_TIMER_PRESETS.map((seconds) => {
+            const active = seconds === bidTimer;
+            return (
+              <button
+                key={seconds}
+                type="button"
+                aria-pressed={active}
+                disabled={Boolean(busy)}
+                onClick={() => !active && onTimer(seconds)}
+                className={cn(
+                  'flex h-9 items-center justify-center rounded-md border font-display text-sm font-semibold tabular transition-colors cursor-pointer disabled:cursor-default',
+                  active ? 'border-signal bg-signal/15 text-signal' : 'border-ink-500 text-mist hover:border-signal/60 hover:text-snow',
+                )}
+              >
+                {busy === `timer:${seconds}` ? <Loader2 size={14} className="animate-spin" /> : `${seconds}s`}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-xs text-haze">The clock resets to this on every bid.</p>
       </div>
-      <p className="text-xs text-haze">The clock resets to this on every bid.</p>
     </Panel>
   );
 };
@@ -290,7 +302,10 @@ const Lobby = () => {
   const roomCode = id.trim().toUpperCase();
   const { toast } = useToast();
   const { user } = useAuth();
-  const { currentAuction, loading: roomLoading, roomError, joinAuction, joinRoom, selectTeam, updateRoomSettings, kickPlayer } = useAuction();
+  const navigate = useNavigate();
+  const {
+    currentAuction, loading: roomLoading, roomError, joinAuction, joinRoom, selectTeam, startAuction, updateRoomSettings, kickPlayer,
+  } = useAuction();
   useDocumentTitle(`Lobby ${roomCode}`);
 
   const uid = user?.uid ?? null;
@@ -302,6 +317,7 @@ const Lobby = () => {
   const [busy, setBusy] = useState(null);
   const [copied, setCopied] = useState(false);
   const [kickTarget, setKickTarget] = useState(null);
+  const [confirmStart, setConfirmStart] = useState(false);
 
   const joined = join?.key === sessionKey ? join.status : null;
   const room = currentAuction?.id === roomCode ? currentAuction : null;
@@ -341,6 +357,12 @@ const Lobby = () => {
   const me = players.find((p) => p.id === uid) ?? null;
   const myTeamId = me?.team || '';
   const holders = new Map(players.filter((p) => p.team).map((p) => [p.team, p]));
+  const status = room?.status;
+
+  // Everyone moves to the auction room together once the host starts
+  useEffect(() => {
+    if (status === 'active' || status === 'completed') navigate(`/auction/${roomCode}`, { replace: true });
+  }, [status, roomCode, navigate]);
 
   const run = async (key, action, onDone) => {
     setBusy(key);
@@ -358,6 +380,12 @@ const Lobby = () => {
   const claimTeam = (teamId) =>
     run(`team:${teamId}`, () => selectTeam(roomCode, teamId), () => {
       toast({ message: `You're managing ${TEAMS_BY_ID.get(teamId).name}`, tone: 'success' });
+    });
+
+  const startNow = () =>
+    run('start', () => startAuction(roomCode), () => {
+      setConfirmStart(false);
+      navigate(`/auction/${roomCode}`, { replace: true });
     });
 
   const setBidTimer = (bidTimer) => run(`timer:${bidTimer}`, () => updateRoomSettings(roomCode, { bidTimer }));
@@ -424,7 +452,7 @@ const Lobby = () => {
     );
   }
 
-  if (!room || roomLoading) return <Spinner className="min-h-dvh" />;
+  if (!room || roomLoading || room.status !== 'waiting') return <Spinner className="min-h-dvh" />;
 
   // ─── Lobby ───
 
@@ -433,6 +461,13 @@ const Lobby = () => {
   const managedCount = holders.size;
   const onlineCount = players.filter((p) => p.isOnline).length;
   const myTeam = TEAMS_BY_ID.get(myTeamId) ?? null;
+  const canStart = managedCount >= 2;
+
+  const requestStart = () => {
+    if (!canStart) return;
+    if (managedCount < TEAM_COUNT) setConfirmStart(true);
+    else startNow();
+  };
 
   return (
     <PageShell wide className="pb-12 pt-4 sm:pt-6">
@@ -475,13 +510,26 @@ const Lobby = () => {
 
         <div className="flex flex-col gap-4">
           <WaitingPanel isHost={isHost} hostName={hostName} myTeam={myTeam} />
-          {isHost && <HostControls room={room} busy={busy} onTimer={setBidTimer} />}
+          {isHost && (
+            <HostControls room={room} busy={busy} managedCount={managedCount} canStart={canStart} onStart={requestStart} onTimer={setBidTimer} />
+          )}
           <MembersPanel players={players} uid={uid} isHost={isHost} onKick={setKickTarget} />
           <Panel label="Room chat" actions={<MessageSquare size={14} className="text-haze" aria-hidden />} bodyClassName="h-[420px]">
             <TextChat roomId={roomCode} canChat={Boolean(me)} />
           </Panel>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmStart}
+        title={`Start with ${managedCount} franchises?`}
+        message={`${TEAM_COUNT - managedCount} franchise${TEAM_COUNT - managedCount === 1 ? ' has' : 's have'} no manager and won't take part in this auction.`}
+        confirmLabel="Start anyway"
+        tone="primary"
+        busy={busy === 'start'}
+        onConfirm={startNow}
+        onCancel={() => setConfirmStart(false)}
+      />
 
       <ConfirmDialog
         open={Boolean(kickTarget)}
