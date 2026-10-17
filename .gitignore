@@ -5,3 +5,5 @@ dist
 !.env.example
 *.log
 .DS_Store
+# Prisma client, made by `npm run db:generate`
+server/generated

@@ -1,0 +1,109 @@
+// Generates TypeScript into server/generated (gitignored). Node 24 runs it directly
+// through its built-in type stripping. Run `npm run db:generate` after editing this file.
+generator client {
+  provider               = "prisma-client"
+  output                 = "../server/generated/prisma"
+  runtime                = "nodejs"
+  moduleFormat           = "esm"
+  generatedFileExtension = "ts"
+  importFileExtension    = "ts"
+}
+
+// The connection URL is set in prisma.config.js
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String?  @unique
+  passwordHash String?
+  googleId     String?  @unique
+  avatarUrl    String?
+  isGuest      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  refreshTokens RefreshToken[]
+  memberships   RoomMember[]
+}
+
+// Opaque refresh tokens, stored only as SHA-256 hashes. Rotated on every use.
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// Money columns are whole lakhs (1 Cr = 100 L) so bid increments never drift.
+model Room {
+  id            String   @id
+  hostId        String
+  status        String   @default("waiting") // waiting | active | completed
+  auctionType   String
+  squadLimit    Int
+  overseasLimit Int
+  budget        Int
+  bidTimer      Int      @default(10)
+  playerOrder   Int[]
+  currentIndex  Int      @default(0)
+  liveState     Json?
+  bannedUserIds String[] @default([])
+  createdAt     DateTime @default(now())
+
+  members   RoomMember[]
+  purchases Purchase[]
+  messages  Message[]
+}
+
+model RoomMember {
+  id              String   @id @default(cuid())
+  roomId          String
+  room            Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName     String
+  teamId          String?
+  budgetRemaining Int
+  joinedAt        DateTime @default(now())
+
+  purchases Purchase[]
+
+  @@unique([roomId, userId])
+  @@unique([roomId, teamId])
+  @@index([userId])
+}
+
+model Purchase {
+  id        String     @id @default(cuid())
+  roomId    String
+  room      Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  memberId  String
+  member    RoomMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  playerId  String
+  price     Int
+  createdAt DateTime   @default(now())
+
+  @@unique([roomId, playerId])
+  @@index([createdAt])
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  userId    String?
+  userName  String
+  type      String // text | gif | log | sold_card
+  text      String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([roomId, createdAt])
+}
