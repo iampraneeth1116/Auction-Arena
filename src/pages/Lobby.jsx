@@ -1,18 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Check, Copy, Crown, Hourglass, House, Loader2, MessageSquare, RotateCw, SearchX, ShieldX, UserRound, Users } from 'lucide-react';
+import { Check, Copy, Crown, Hourglass, House, Loader2, MessageSquare, RotateCw, SearchX, ShieldX, Timer, UserMinus, UserRound, Users } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useAuction } from '../hooks/useAuction';
 import { useToast } from '../hooks/useToast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { TEAMS } from '../data/teams';
 import { TEAMS_BY_ID } from '../lib/catalog';
-import { MODE_META, formatCrores } from '../lib/format';
+import { BID_TIMER_PRESETS, MODE_META, formatCrores } from '../lib/format';
 import { cn } from '../lib/cn';
 import PageShell from '../components/ui/PageShell';
 import Panel from '../components/ui/Panel';
 import Button from '../components/ui/Button';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
 import Spinner from '../components/ui/Spinner';
 import Stat from '../components/ui/Stat';
 import Tag from '../components/ui/Tag';
@@ -193,7 +194,42 @@ const WaitingPanel = ({ isHost, hostName, myTeam }) => (
   </Panel>
 );
 
-const MembersPanel = ({ players, uid }) => {
+const HostControls = ({ room, busy, onTimer }) => {
+  const bidTimer = room.settings?.bidTimer;
+  return (
+    <Panel label="Host controls" accent="signal" bodyClassName="space-y-2.5 p-4">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className={cn(labelClasses, 'flex items-center gap-2')}>
+          <Timer size={15} className="text-signal" aria-hidden /> Bid timer
+        </h3>
+        <span className="tabular text-sm text-mist">{bidTimer}s per bid</span>
+      </div>
+      <div role="group" aria-label="Bid timer in seconds" className="grid grid-cols-6 gap-1">
+        {BID_TIMER_PRESETS.map((seconds) => {
+          const active = seconds === bidTimer;
+          return (
+            <button
+              key={seconds}
+              type="button"
+              aria-pressed={active}
+              disabled={Boolean(busy)}
+              onClick={() => !active && onTimer(seconds)}
+              className={cn(
+                'flex h-9 items-center justify-center rounded-md border font-display text-sm font-semibold tabular transition-colors cursor-pointer disabled:cursor-default',
+                active ? 'border-signal bg-signal/15 text-signal' : 'border-ink-500 text-mist hover:border-signal/60 hover:text-snow',
+              )}
+            >
+              {busy === `timer:${seconds}` ? <Loader2 size={14} className="animate-spin" /> : `${seconds}s`}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-xs text-haze">The clock resets to this on every bid.</p>
+    </Panel>
+  );
+};
+
+const MembersPanel = ({ players, uid, isHost, onKick }) => {
   // Host first, otherwise in join order
   const ordered = [...players].sort((a, b) => Number(b.isHost) - Number(a.isHost));
   return (
@@ -228,6 +264,17 @@ const MembersPanel = ({ players, uid }) => {
                   <span className="truncate">{team ? team.name : 'No franchise yet'}</span>
                 </div>
               </div>
+              {isHost && p.id !== uid && (
+                <button
+                  type="button"
+                  onClick={() => onKick(p)}
+                  aria-label={`Remove ${p.name} from the room`}
+                  title="Remove from room"
+                  className="shrink-0 rounded-md p-2 text-haze transition-colors hover:bg-flare/10 hover:text-flare cursor-pointer"
+                >
+                  <UserMinus size={16} />
+                </button>
+              )}
             </li>
           );
         })}
@@ -243,7 +290,7 @@ const Lobby = () => {
   const roomCode = id.trim().toUpperCase();
   const { toast } = useToast();
   const { user } = useAuth();
-  const { currentAuction, loading: roomLoading, roomError, joinAuction, joinRoom, selectTeam } = useAuction();
+  const { currentAuction, loading: roomLoading, roomError, joinAuction, joinRoom, selectTeam, updateRoomSettings, kickPlayer } = useAuction();
   useDocumentTitle(`Lobby ${roomCode}`);
 
   const uid = user?.uid ?? null;
@@ -254,6 +301,7 @@ const Lobby = () => {
   const [stalledKey, setStalledKey] = useState(null);
   const [busy, setBusy] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [kickTarget, setKickTarget] = useState(null);
 
   const joined = join?.key === sessionKey ? join.status : null;
   const room = currentAuction?.id === roomCode ? currentAuction : null;
@@ -294,16 +342,33 @@ const Lobby = () => {
   const myTeamId = me?.team || '';
   const holders = new Map(players.filter((p) => p.team).map((p) => [p.team, p]));
 
-  const claimTeam = async (teamId) => {
-    setBusy(`team:${teamId}`);
+  const run = async (key, action, onDone) => {
+    setBusy(key);
     try {
-      await selectTeam(roomCode, teamId);
-      toast({ message: `You're managing ${TEAMS_BY_ID.get(teamId).name}`, tone: 'success' });
+      const result = await action();
+      onDone?.(result);
     } catch (err) {
-      toast({ message: err.message || 'Something went wrong. Please try again.', tone: 'error' });
+      if (err.code === 'kicked') setJoin({ key: sessionKey, status: 'kicked' });
+      else toast({ message: err.message || 'Something went wrong. Please try again.', tone: 'error' });
     } finally {
       setBusy(null);
     }
+  };
+
+  const claimTeam = (teamId) =>
+    run(`team:${teamId}`, () => selectTeam(roomCode, teamId), () => {
+      toast({ message: `You're managing ${TEAMS_BY_ID.get(teamId).name}`, tone: 'success' });
+    });
+
+  const setBidTimer = (bidTimer) => run(`timer:${bidTimer}`, () => updateRoomSettings(roomCode, { bidTimer }));
+
+  const confirmKick = () => {
+    const target = kickTarget;
+    if (!target) return;
+    run('kick', () => kickPlayer(roomCode, target), () => {
+      setKickTarget(null);
+      toast({ message: `${target.name} was removed from the room`, tone: 'success' });
+    });
   };
 
   const copyLink = async () => {
@@ -326,7 +391,7 @@ const Lobby = () => {
     );
   }
 
-  if (joined === 'kicked' || roomError?.code === 'kicked') {
+  if (joined === 'kicked' || roomError?.code === 'kicked' || Boolean(room?.bannedPlayers?.includes(uid))) {
     return (
       <StateScreen icon={ShieldX} tone="flare" title="You were removed from this room" actions={<HomeLink />}>
         The host removed you from room <span className="tabular font-semibold text-snow">{roomCode}</span>, so you can't rejoin it with this account.
@@ -410,12 +475,24 @@ const Lobby = () => {
 
         <div className="flex flex-col gap-4">
           <WaitingPanel isHost={isHost} hostName={hostName} myTeam={myTeam} />
-          <MembersPanel players={players} uid={uid} />
+          {isHost && <HostControls room={room} busy={busy} onTimer={setBidTimer} />}
+          <MembersPanel players={players} uid={uid} isHost={isHost} onKick={setKickTarget} />
           <Panel label="Room chat" actions={<MessageSquare size={14} className="text-haze" aria-hidden />} bodyClassName="h-[420px]">
             <TextChat roomId={roomCode} canChat={Boolean(me)} />
           </Panel>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={Boolean(kickTarget)}
+        title={`Remove ${kickTarget?.name ?? 'player'}?`}
+        message="They'll be taken out of the room and can't rejoin it with this account."
+        confirmLabel="Remove"
+        tone="danger"
+        busy={busy === 'kick'}
+        onConfirm={confirmKick}
+        onCancel={() => setKickTarget(null)}
+      />
     </PageShell>
   );
 };

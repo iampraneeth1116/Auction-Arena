@@ -52,6 +52,15 @@ export const AuctionProvider = ({ children }) => {
       setMessages(prev => (prev.some(m => m.id === message.id) ? prev : [...prev, message]));
     };
 
+    // The host removed this user: the room page shows why instead of the lobby
+    const onKicked = ({ roomId: kickedFrom }) => {
+      if (!active || kickedFrom !== normalizedId) return;
+      setRoomError({ message: 'You were removed from this room.', code: 'kicked' });
+      setCurrentAuction(null);
+      setRoomTeams([]);
+      setMessages([]);
+    };
+
     // Runs on first connect and again after every reconnect
     const join = () => {
       socket.emit('room:join', { roomId: normalizedId }, (res) => {
@@ -72,6 +81,7 @@ export const AuctionProvider = ({ children }) => {
 
     socket.on('room:state', applyState);
     socket.on('chat:message', onMessage);
+    socket.on('room:kicked', onKicked);
     socket.on('connect', join);
     if (socket.connected) join();
     else connectSocket();
@@ -80,6 +90,7 @@ export const AuctionProvider = ({ children }) => {
       active = false;
       socket.off('room:state', applyState);
       socket.off('chat:message', onMessage);
+      socket.off('room:kicked', onKicked);
       socket.off('connect', join);
       if (socket.connected) socket.emit('room:leave', { roomId: normalizedId });
       setCurrentAuction(null);
@@ -90,6 +101,17 @@ export const AuctionProvider = ({ children }) => {
 
   const selectTeam = useCallback(
     (roomId, teamId) => emitWithAck('team:select', { roomId, teamId }),
+    []
+  );
+
+  // settings: { bidTimer } — anything left out keeps its current value
+  const updateRoomSettings = useCallback(
+    (roomId, settings) => emitWithAck('settings:update', { roomId, ...settings }),
+    []
+  );
+
+  const kickPlayer = useCallback(
+    (roomId, player) => emitWithAck('member:kick', { roomId, userId: player.id }),
     []
   );
 
@@ -109,6 +131,8 @@ export const AuctionProvider = ({ children }) => {
     joinRoom,
     joinAuction,
     selectTeam,
+    updateRoomSettings,
+    kickPlayer,
     sendMessage,
   };
 

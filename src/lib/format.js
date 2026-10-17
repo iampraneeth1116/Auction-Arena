@@ -14,3 +14,6 @@ export const formatCrores = (crores) => (Number(crores) || 0).toFixed(2).replace
 export const MODE_META = {
   mega: { label: 'Mega Auction', short: 'Mega', blurb: '25-player squads · ₹120 Cr purse · full player list', squad: 25, overseas: 8 },
 };
+
+// Seconds per bid the host can pick from
+export const BID_TIMER_PRESETS = [3, 5, 10, 15, 20, 30];

@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { prisma } from '../db.js';
 import { HttpError } from '../validation.js';
-import { AUCTION_MODES, DEFAULT_BID_TIMER, TEAMS_BY_ID, toCrores } from '../auctionRules.js';
+import { AUCTION_MODES, DEFAULT_BID_TIMER, MAX_BID_TIMER, MIN_BID_TIMER, TEAMS_BY_ID, toCrores } from '../auctionRules.js';
 
 // The server owns every room. Each room lives in memory while someone is in it
 // and every change is written to Postgres first, so nothing is lost on a restart.
@@ -167,6 +167,10 @@ function assertNotBanned(rt, userId) {
   }
 }
 
+function requireHost(rt, userId) {
+  if (rt.room.hostId !== userId) throw new HttpError(403, 'Only the host can do that');
+}
+
 function requireMember(rt, userId) {
   const member = rt.members.get(userId);
   if (!member) throw new HttpError(403, 'Join the room first');
@@ -252,6 +256,45 @@ export function selectTeam(rt, userId, teamId) {
       throw err;
     }
     rt.members.set(userId, updated);
+    broadcast(rt);
+  });
+}
+
+// Room settings the host can change in the lobby; anything left out keeps its value
+export function updateSettings(rt, userId, { bidTimer = rt.room.bidTimer }) {
+  return exclusive(rt, async () => {
+    requireHost(rt, userId);
+    if (!Number.isInteger(bidTimer) || bidTimer < MIN_BID_TIMER || bidTimer > MAX_BID_TIMER) {
+      throw new HttpError(400, `Bid timer must be between ${MIN_BID_TIMER} and ${MAX_BID_TIMER} seconds`);
+    }
+    if (rt.room.status === 'completed') throw new HttpError(409, 'This auction has already ended.');
+    await prisma.room.update({ where: { id: rt.room.id }, data: { bidTimer } });
+    rt.room.bidTimer = bidTimer;
+    broadcast(rt);
+  });
+}
+
+// Removes someone from the room for good: they can't rejoin with the same account
+export function kickMember(rt, hostId, targetUserId) {
+  return exclusive(rt, async () => {
+    requireHost(rt, hostId);
+    if (targetUserId === hostId) throw new HttpError(400, "You can't remove yourself");
+    const target = rt.members.get(targetUserId);
+    if (!target) throw new HttpError(404, 'That player is not in this room');
+
+    const bannedUserIds = [...new Set([...rt.room.bannedUserIds, targetUserId])];
+    await prisma.$transaction([
+      prisma.roomMember.delete({ where: { id: target.id } }),
+      prisma.room.update({ where: { id: rt.room.id }, data: { bannedUserIds } }),
+    ]);
+    rt.members.delete(targetUserId);
+    rt.room.bannedUserIds = bannedUserIds;
+    rt.presence.delete(targetUserId);
+
+    // Every tab they have open leaves the room at once
+    io?.to(userChannel(targetUserId)).emit('room:kicked', { roomId: rt.room.id });
+    io?.in(userChannel(targetUserId)).socketsLeave(roomChannel(rt.room.id));
+    await addMessage(rt, { text: `${target.displayName} has been removed from the room.` });
     broadcast(rt);
   });
 }

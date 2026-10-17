@@ -65,6 +65,8 @@ export function createSocketServer(httpServer) {
     });
 
     handle('team:select', async ({ roomId, teamId }) => rooms.selectTeam(await loadRoom(roomId), user.id, teamId));
+    handle('settings:update', async ({ roomId, bidTimer }) => rooms.updateSettings(await loadRoom(roomId), user.id, { bidTimer }));
+    handle('member:kick', async ({ roomId, userId }) => rooms.kickMember(await loadRoom(roomId), user.id, userId));
     handle('chat:send', async ({ roomId, text, type }) => rooms.sendChat(await loadRoom(roomId), user.id, { text, type }));
 
     socket.on('disconnect', () => {

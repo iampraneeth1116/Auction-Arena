@@ -7,6 +7,8 @@ export const AUCTION_MODES = {
 };
 
 export const DEFAULT_BID_TIMER = 10;
+export const MIN_BID_TIMER = 3;
+export const MAX_BID_TIMER = 60;
 
 export const TEAMS_BY_ID = new Map(TEAMS.map(t => [t.id, t]));
 
