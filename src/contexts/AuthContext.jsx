@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useGoogleLogin } from '@react-oauth/google';
 import { api } from '../lib/api';
+import { resetSocket } from '../lib/socket';
 import { AuthContext } from '../hooks/useAuth';
 import Spinner from '../components/ui/Spinner';
 
@@ -50,6 +51,8 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const applySession = (sessionUser) => {
+    // The socket authenticated with the previous cookie; reconnect with the new one
+    resetSocket();
     const clientUser = toClientUser(sessionUser);
     setUser(clientUser);
     return clientUser;
@@ -98,6 +101,7 @@ export const AuthProvider = ({ children }) => {
     try {
       await api('/api/auth/logout', { method: 'POST' });
     } finally {
+      resetSocket();
       setUser(null);
     }
   };

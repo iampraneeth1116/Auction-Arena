@@ -6,3 +6,20 @@ export function requireAuth(req, res, next) {
   req.user = user;
   next();
 }
+
+// Minimal Cookie header parser for the Socket.IO handshake
+export function parseCookieHeader(header = '') {
+  const cookies = {};
+  for (const part of header.split(';')) {
+    const index = part.indexOf('=');
+    if (index === -1) continue;
+    const key = part.slice(0, index).trim();
+    if (!key) continue;
+    try {
+      cookies[key] = decodeURIComponent(part.slice(index + 1).trim());
+    } catch {
+      // skip malformed cookie values
+    }
+  }
+  return cookies;
+}

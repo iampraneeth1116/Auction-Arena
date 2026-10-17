@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { ToastProvider } from './components/ui/Toast';
 import { AuthProvider } from './contexts/AuthContext';
+import { AuctionProvider } from './contexts/AuctionContext';
 import ScrollToTop from './components/ScrollToTop';
 import Spinner from './components/ui/Spinner';
 import LandingPage from './pages/LandingPage';
@@ -24,13 +25,15 @@ function App() {
       <GoogleProvider>
         <ToastProvider>
           <AuthProvider>
-            <Suspense fallback={<Spinner className="min-h-dvh" />}>
-              <Routes>
-                <Route path="/" element={<LandingPage />} />
-                <Route path="/lobby/:id" element={<Lobby />} />
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </Suspense>
+            <AuctionProvider>
+              <Suspense fallback={<Spinner className="min-h-dvh" />}>
+                <Routes>
+                  <Route path="/" element={<LandingPage />} />
+                  <Route path="/lobby/:id" element={<Lobby />} />
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </Suspense>
+            </AuctionProvider>
           </AuthProvider>
         </ToastProvider>
       </GoogleProvider>

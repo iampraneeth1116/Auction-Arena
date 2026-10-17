@@ -15,7 +15,7 @@ import GoogleMark from '../components/ui/GoogleMark';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
-import { api } from '../lib/api';
+import { useAuction } from '../hooks/useAuction';
 import { ratingOf } from '../lib/catalog';
 import { cn } from '../lib/cn';
 import { TEAMS } from '../data/teams';
@@ -94,13 +94,14 @@ const SignInPanel = () => {
 const HostTab = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { createRoom } = useAuction();
   const [teamId, setTeamId] = useState(TEAMS[0].id);
   const [busy, setBusy] = useState(false);
 
   const create = async () => {
     setBusy(true);
     try {
-      const { id } = await api('/api/rooms', { method: 'POST', body: { teamId } });
+      const id = await createRoom({ teamId });
       navigate(`/lobby/${id}`);
     } catch (err) {
       toast({ message: err.message, tone: 'error' });
@@ -134,6 +135,7 @@ const HostTab = () => {
 const JoinTab = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { joinRoom } = useAuction();
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -141,7 +143,7 @@ const JoinTab = () => {
     e.preventDefault();
     setBusy(true);
     try {
-      const { id } = await api(`/api/rooms/${encodeURIComponent(code)}/join`, { method: 'POST', body: {} });
+      const id = await joinRoom(code.trim());
       navigate(`/lobby/${id}`);
     } catch (err) {
       toast({ message: err.message, tone: 'error' });

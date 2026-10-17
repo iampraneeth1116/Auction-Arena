@@ -8,6 +8,7 @@ import { config } from './config.js';
 import { prisma } from './db.js';
 import authRoutes from './routes/auth.js';
 import roomRoutes from './routes/rooms.js';
+import { createSocketServer } from './realtime/socket.js';
 
 const app = express();
 // Hosts like Render put one proxy in front: needed for real client IPs
@@ -51,6 +52,8 @@ app.use((err, req, res, next) => {
 });
 
 const server = http.createServer(app);
+// Live room state runs over Socket.IO on the same server and port
+createSocketServer(server);
 server.listen(config.port, () => {
   console.log(`[server] listening on http://localhost:${config.port}`);
 });
