@@ -25,6 +25,7 @@ export function refreshSession() {
 const NO_REFRESH_PATHS = new Set([
   '/api/auth/login',
   '/api/auth/register',
+  '/api/auth/google',
   '/api/auth/guest',
   '/api/auth/refresh',
   '/api/auth/logout',

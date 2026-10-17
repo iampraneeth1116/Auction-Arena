@@ -4,6 +4,8 @@ import { createContext, useContext } from 'react';
 export const AuthContext = createContext({
   user: null,
   loading: true,
+  googleEnabled: false,
+  loginWithGoogle: async () => {},
   loginWithEmail: async () => {},
   registerWithEmail: async () => {},
   loginAsGuest: async () => {},

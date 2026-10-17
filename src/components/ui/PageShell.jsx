@@ -13,7 +13,11 @@ export const UserChip = ({ compact = false }) => {
   return (
     <div className="flex items-center gap-2">
       <span className="flex items-center gap-2 rounded-md border border-white/8 bg-ink-850/80 py-1 pl-1 pr-2.5">
-        <span className="flex size-6 items-center justify-center rounded-sm bg-signal/20 font-display text-sm font-bold text-signal">{initial}</span>
+        {user.photoURL ? (
+          <img src={user.photoURL} alt="" className="size-6 rounded-sm object-cover" referrerPolicy="no-referrer" />
+        ) : (
+          <span className="flex size-6 items-center justify-center rounded-sm bg-signal/20 font-display text-sm font-bold text-signal">{initial}</span>
+        )}
         {!compact && <span className="max-w-32 truncate text-sm font-semibold">{user.displayName}</span>}
         {user.isGuest && !compact && <Tag>Guest</Tag>}
       </span>

@@ -8,6 +8,10 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react(), tailwindcss()],
+    // The Google client ID is public; defining it here keeps one GOOGLE_CLIENT_ID in .env
+    define: {
+      'import.meta.env.VITE_GOOGLE_CLIENT_ID': JSON.stringify(env.GOOGLE_CLIENT_ID || ''),
+    },
     server: {
       // Proxy to the Node server so development is same-origin, like production
       proxy: {

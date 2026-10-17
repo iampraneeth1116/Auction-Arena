@@ -9,6 +9,7 @@ import TeamCrest from '../components/ui/TeamCrest';
 import PlayerPhoto from '../components/ui/PlayerPhoto';
 import RatingBadge from '../components/ui/RatingBadge';
 import EmailAuthForm from '../components/EmailAuthForm';
+import GoogleMark from '../components/ui/GoogleMark';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -49,17 +50,34 @@ const GuestSignIn = ({ onBack }) => {
 };
 
 const SignInPanel = () => {
+  const { googleEnabled, loginWithGoogle } = useAuth();
+  const { toast } = useToast();
   const [view, setView] = useState('choose'); // choose | email | guest
+
+  const signInWithGoogle = async () => {
+    try {
+      await loginWithGoogle();
+    } catch (err) {
+      toast({ message: err.message, tone: 'error' });
+    }
+  };
+
   return (
     <Panel label="Start playing" accent="signal" className="w-full max-w-md" bodyClassName="p-4 sm:p-5">
       {view === 'email' && <EmailAuthForm onBack={() => setView('choose')} />}
       {view === 'guest' && <GuestSignIn onBack={() => setView('choose')} />}
       {view === 'choose' && (
         <div className="space-y-2.5">
-          <Button size="lg" block icon={Mail} onClick={() => setView('email')}>Continue with email</Button>
+          {googleEnabled && (
+            <Button size="lg" block icon={GoogleMark} onClick={signInWithGoogle}>Continue with Google</Button>
+          )}
+          <Button variant={googleEnabled ? 'outline' : 'primary'} size="lg" block icon={Mail} onClick={() => setView('email')}>
+            Continue with email
+          </Button>
           <Button variant="outline" size="lg" block icon={UserRound} onClick={() => setView('guest')}>Play as a guest</Button>
           <p className="pt-1 text-xs leading-relaxed text-haze">
-            Guests can play straight away. Sign in with email to keep your auction history on any device.
+            Guests can play straight away. Sign in with {googleEnabled ? 'Google or email' : 'email'} to keep your auction
+            history on any device.
           </p>
         </div>
       )}
