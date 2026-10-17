@@ -20,11 +20,21 @@ export const BID_TIMER_PRESETS = [3, 5, 10, 15, 20, 30];
 
 export const isOverseas = (player) => Boolean(player) && player.country !== 'IND';
 
+export function timeAgo(timestamp, now = Date.now()) {
+  const seconds = Math.max(0, Math.floor((now - timestamp) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return new Date(timestamp).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+}
+
+export const ROLES = ['Batsman', 'Wicket-Keeper', 'All-Rounder', 'Bowler'];
+
 export const ROLE_META = {
-  'Batsman': { short: 'BAT', label: 'Batter' },
-  'Wicket-Keeper': { short: 'WK', label: 'Keeper' },
-  'All-Rounder': { short: 'AR', label: 'All-rounder' },
-  'Bowler': { short: 'BOWL', label: 'Bowler' },
+  'Batsman': { short: 'BAT', label: 'Batter', plural: 'Batters' },
+  'Wicket-Keeper': { short: 'WK', label: 'Keeper', plural: 'Keepers' },
+  'All-Rounder': { short: 'AR', label: 'All-rounder', plural: 'All-rounders' },
+  'Bowler': { short: 'BOWL', label: 'Bowler', plural: 'Bowlers' },
 };
 
 // Same increments the server uses: base price first, then +20 L under ₹5 Cr, +25 L above

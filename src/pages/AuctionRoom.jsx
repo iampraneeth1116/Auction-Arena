@@ -1,23 +1,28 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
-import { Check, Copy, Home, MessageSquare, Radio, ShieldAlert, Trophy } from 'lucide-react';
+import { Check, Copy, History, Home, MessageSquare, Radio, ShieldAlert, Trophy } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useAuction } from '../hooks/useAuction';
 import { useToast } from '../hooks/useToast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 import { PLAYERS_BY_ID } from '../lib/catalog';
 import { MODE_META, formatPrice, isOverseas, maxBidFor, nextBid } from '../lib/format';
 import { cn } from '../lib/cn';
 import Logo from '../components/ui/Logo';
 import Panel from '../components/ui/Panel';
+import Segmented from '../components/ui/Segmented';
 import Spinner from '../components/ui/Spinner';
 import { LiveTag } from '../components/ui/Tag';
+import Ticker, { TickerItem } from '../components/ui/Ticker';
 import TeamCrest from '../components/ui/TeamCrest';
 import { buttonClasses } from '../components/ui/styles';
 import TextChat from '../components/TextChat';
 import LotCard from '../components/auction/LotCard';
 import PriceBoard from '../components/auction/PriceBoard';
 import BidConsole from '../components/auction/BidConsole';
+import TeamBoard from '../components/auction/TeamBoard';
+import ActivityFeed from '../components/auction/ActivityFeed';
 
 const FullScreenNotice = ({ icon: Icon, title, children }) => (
   <div className="flex min-h-dvh items-center justify-center bg-grid px-4">
@@ -55,13 +60,15 @@ const AuctionRoom = () => {
   const id = rawId.toUpperCase();
   const { toast } = useToast();
   const { user, loading: authLoading } = useAuth();
-  const { currentAuction, roomTeams, team, loading, roomError, joinAuction, placeBid, getSyncedTime } = useAuction();
+  const { currentAuction, roomTeams, team, loading, roomError, messages, joinAuction, placeBid, getSyncedTime } = useAuction();
   useDocumentTitle(`Live ${id}`);
 
   const [optimistic, setOptimistic] = useState(null);
   const [timeLeft, setTimeLeft] = useState(null);
   const [copied, setCopied] = useState(false);
   const [mobileTab, setMobileTab] = useState('stage');
+  const [sideTab, setSideTab] = useState('feed');
+  const wideScreen = useMediaQuery('(min-width: 1280px)');
 
   useEffect(() => (user?.uid ? joinAuction(id) : undefined), [id, user?.uid, joinAuction]);
 
@@ -155,6 +162,11 @@ const AuctionRoom = () => {
     }
   }, [serverLive, user?.uid, toast]);
 
+  const recentSales = useMemo(
+    () => messages.filter(m => m.type === 'sold_card').slice(-12).reverse(),
+    [messages],
+  );
+
   const copyCode = async () => {
     try {
       await navigator.clipboard.writeText(id);
@@ -215,6 +227,17 @@ const AuctionRoom = () => {
     </div>
   );
 
+  const teamBoard = (
+    <TeamBoard roomTeams={roomTeams} players={players} squadLimit={squadLimit} overseasLimit={overseasLimit} myId={user.uid} />
+  );
+  // Wide screens show the franchises in their own column; narrower ones get a Teams tab
+  const sideOptions = [
+    { id: 'feed', label: 'Feed', icon: History },
+    { id: 'chat', label: 'Chat', icon: MessageSquare },
+    ...(wideScreen ? [] : [{ id: 'teams', label: 'Teams', icon: Trophy }]),
+  ];
+  const activeSideTab = !wideScreen || sideTab !== 'teams' ? sideTab : 'feed';
+
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-grid">
       {/* Top bar */}
@@ -240,30 +263,55 @@ const AuctionRoom = () => {
       </header>
 
       <div className="flex min-h-0 flex-1">
+        {/* Franchises (wide screens) */}
+        <aside className="hidden w-80 shrink-0 flex-col border-r border-white/6 bg-ink-900/50 xl:flex">
+          <div className="flex h-11 items-center justify-between border-b border-white/6 px-4">
+            <span className="font-display text-sm font-semibold uppercase tracking-[0.16em] text-mist">Franchises</span>
+            <span className="font-display text-xs uppercase tracking-wider text-haze">by strength</span>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">{teamBoard}</div>
+        </aside>
+
         {/* Stage (always on large screens; one of the tabs on phones) */}
         <main className="min-h-0 flex-1 overflow-y-auto scrollbar-thin pb-16 lg:pb-0">
           <div className={cn(mobileTab !== 'stage' && 'hidden lg:block')}>{stage}</div>
+          <div className={cn('lg:hidden', mobileTab !== 'teams' && 'hidden')}>{teamBoard}</div>
+          <div className={cn('lg:hidden', mobileTab !== 'feed' && 'hidden')}><ActivityFeed messages={messages} /></div>
           {mobileTab === 'chat' && (
             <div className="h-[calc(100dvh-7.5rem)] lg:hidden"><TextChat roomId={id} canChat={Boolean(team)} /></div>
           )}
         </main>
 
-        {/* Chat beside the stage on large screens */}
+        {/* Feed, chat (and teams below xl) */}
         <aside className="hidden w-96 shrink-0 flex-col border-l border-white/6 bg-ink-900/50 lg:flex">
-          <div className="flex h-11 shrink-0 items-center gap-2 border-b border-white/6 px-4">
-            <MessageSquare size={14} className="text-haze" aria-hidden />
-            <span className="font-display text-sm font-semibold uppercase tracking-[0.16em] text-mist">Room chat</span>
-          </div>
-          <div className="min-h-0 flex-1">
-            <TextChat roomId={id} canChat={Boolean(team)} className="h-full" />
+          <Segmented options={sideOptions} value={activeSideTab} onChange={setSideTab} stretch className="h-11 shrink-0 border-b border-white/6 px-2" />
+          <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
+            {activeSideTab === 'feed' && <ActivityFeed messages={messages} />}
+            {activeSideTab === 'chat' && <TextChat roomId={id} canChat={Boolean(team)} className="h-full" />}
+            {activeSideTab === 'teams' && teamBoard}
           </div>
         </aside>
       </div>
 
+      {/* Recent sales ticker */}
+      {recentSales.length > 0 && (
+        <Ticker label="Sold" loop={recentSales.length >= 4} className="hidden lg:flex">
+          {recentSales.map(sale => (
+            <TickerItem key={sale.id}>
+              <TeamCrest teamId={sale.metadata.teamId} size="xs" className="border-0" />
+              <span className="font-semibold text-snow">{PLAYERS_BY_ID.get(sale.metadata.playerId)?.name}</span>
+              <span className="tabular font-display text-volt">{formatPrice(sale.metadata.bid)}</span>
+            </TickerItem>
+          ))}
+        </Ticker>
+      )}
+
       {/* Phone tabs */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid h-16 grid-cols-2 border-t border-white/8 bg-ink-950/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid h-16 grid-cols-4 border-t border-white/8 bg-ink-950/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
         {[
           { id: 'stage', label: 'Stage', icon: Radio },
+          { id: 'teams', label: 'Teams', icon: Trophy },
+          { id: 'feed', label: 'Feed', icon: History },
           { id: 'chat', label: 'Chat', icon: MessageSquare },
         ].map(({ id: tab, label, icon: Icon }) => (
           <button

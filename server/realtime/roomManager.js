@@ -278,7 +278,13 @@ async function resolvePlayer(rt) {
     await addMessage(rt, {
       type: 'sold_card',
       text: `${player.name} SOLD to ${team?.name || buyer.displayName} for ₹${toCrores(live.currentBid)} Cr`,
-      metadata: { playerId: player.id, teamId: buyer.teamId, bid: toCrores(live.currentBid), buyerId: buyer.userId },
+      metadata: {
+        playerId: player.id,
+        teamId: buyer.teamId,
+        bid: toCrores(live.currentBid),
+        buyerId: buyer.userId,
+        buyerName: buyer.displayName,
+      },
     });
   } else {
     const unsoldLive = { ...live, status: 'unsold', resolvedAt };
