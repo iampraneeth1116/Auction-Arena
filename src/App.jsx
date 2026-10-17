@@ -1,15 +1,26 @@
-import Logo from './components/ui/Logo';
-import Tag from './components/ui/Tag';
+import React, { Suspense, lazy } from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { ToastProvider } from './components/ui/Toast';
+import ScrollToTop from './components/ScrollToTop';
+import Spinner from './components/ui/Spinner';
+import LandingPage from './pages/LandingPage';
+
+// Everything except the landing page loads when first visited
+const NotFound = lazy(() => import('./pages/NotFound'));
 
 function App() {
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center gap-5 bg-grid px-6 text-center">
-      <Tag tone="signal">Coming soon</Tag>
-      <Logo size="lg" />
-      <p className="max-w-md text-mist">
-        Run a live IPL auction with your friends. Claim a franchise, bid in real time and build the best squad.
-      </p>
-    </main>
+    <Router>
+      <ScrollToTop />
+      <ToastProvider>
+        <Suspense fallback={<Spinner className="min-h-dvh" />}>
+          <Routes>
+            <Route path="/" element={<LandingPage />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </Suspense>
+      </ToastProvider>
+    </Router>
   );
 }
 
