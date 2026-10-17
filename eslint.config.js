@@ -19,8 +19,11 @@ export default defineConfig([
     },
   },
   {
-    files: ['*.config.js'],
+    files: ['server/**/*.js', '*.config.js'],
     extends: [js.configs.recommended],
     languageOptions: { ecmaVersion: 'latest', sourceType: 'module', globals: globals.node },
+    rules: {
+      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+    },
   },
 ]);

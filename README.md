@@ -4,9 +4,13 @@ Run a live IPL auction with your friends: claim a franchise, bid in real time an
 
 ## Development
 
+Requires Node.js 24.
+
 ```bash
 npm install
-npm run dev
+cp .env.example .env
+npm run dev:server   # API on http://localhost:3001
+npm run dev          # React app on http://localhost:5173 (proxies /api to the server)
 ```
 
-Requires Node.js 24.
+In production, `npm run build && npm start` serves the built app and the API from one Node process.

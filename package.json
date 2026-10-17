@@ -8,11 +8,15 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:server": "node --watch server/index.js",
     "build": "vite build",
+    "start": "node server/index.js",
     "preview": "vite preview",
     "lint": "eslint ."
   },
   "dependencies": {
+    "dotenv": "^17.4.2",
+    "express": "^5.3.0",
     "framer-motion": "^13.5.1",
     "lucide-react": "^1.59.0",
     "react": "^19.3.1",
