@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { prisma } from '../db.js';
@@ -16,12 +17,46 @@ const authLimiter = rateLimit({
   message: { error: 'Too many attempts. Try again in a few minutes.' },
 });
 
+// Compared against when an email has no account, so response time doesn't reveal which emails exist
+const DUMMY_HASH = bcrypt.hashSync('no-account-for-this-email', 12);
+
+const emailSchema = z.string().trim().toLowerCase().pipe(z.email('Enter a valid email'));
+const registerSchema = z.object({
+  name: z.string().trim().min(1, 'Enter your name').max(40, 'Name is too long'),
+  email: emailSchema,
+  password: z.string().min(8, 'Password must be at least 8 characters').max(128, 'Password is too long'),
+});
+const loginSchema = z.object({ email: emailSchema, password: z.string().min(1, 'Enter your password').max(128) });
 const guestSchema = z.object({ name: z.string().trim().min(1, 'Enter a name').max(24, 'Name is too long') });
 
 export const publicUser = (user) => ({
   id: user.id,
   name: user.name,
+  email: user.email,
   isGuest: user.isGuest,
+});
+
+router.post('/register', authLimiter, async (req, res) => {
+  const { name, email, password } = parseBody(registerSchema, req.body);
+  if (await prisma.user.findUnique({ where: { email } })) {
+    return res.status(409).json({ error: 'An account with this email already exists. Sign in instead.' });
+  }
+  const user = await prisma.user.create({
+    data: { name, email, passwordHash: await bcrypt.hash(password, 12) },
+  });
+  await startSession(res, user);
+  res.status(201).json({ user: publicUser(user) });
+});
+
+router.post('/login', authLimiter, async (req, res) => {
+  const { email, password } = parseBody(loginSchema, req.body);
+  const user = await prisma.user.findUnique({ where: { email } });
+  const passwordMatches = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
+  if (!user?.passwordHash || !passwordMatches) {
+    return res.status(401).json({ error: 'Incorrect email or password' });
+  }
+  await startSession(res, user);
+  res.json({ user: publicUser(user) });
 });
 
 // Play straight away with just a name

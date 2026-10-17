@@ -4,6 +4,8 @@ import { createContext, useContext } from 'react';
 export const AuthContext = createContext({
   user: null,
   loading: true,
+  loginWithEmail: async () => {},
+  registerWithEmail: async () => {},
   loginAsGuest: async () => {},
   logout: async () => {},
 });

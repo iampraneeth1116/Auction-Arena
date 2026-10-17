@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowRight, UserRound } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Mail, UserRound } from 'lucide-react';
 import PageShell from '../components/ui/PageShell';
 import Panel from '../components/ui/Panel';
 import Button from '../components/ui/Button';
@@ -8,6 +8,7 @@ import Tag from '../components/ui/Tag';
 import TeamCrest from '../components/ui/TeamCrest';
 import PlayerPhoto from '../components/ui/PlayerPhoto';
 import RatingBadge from '../components/ui/RatingBadge';
+import EmailAuthForm from '../components/EmailAuthForm';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -18,7 +19,7 @@ import { IPL_PLAYERS } from '../data/players';
 // The five highest Arena Ratings, as a taste of the player list
 const TOP_RATED = [...IPL_PLAYERS].sort((a, b) => ratingOf(b.id) - ratingOf(a.id)).slice(0, 5);
 
-const GuestSignIn = () => {
+const GuestSignIn = ({ onBack }) => {
   const { loginAsGuest } = useAuth();
   const { toast } = useToast();
   const [name, setName] = useState('');
@@ -37,14 +38,31 @@ const GuestSignIn = () => {
   };
 
   return (
-    <Panel label="Start playing" accent="signal" className="w-full max-w-md" bodyClassName="p-4 sm:p-5">
       <form onSubmit={submit} className="space-y-3">
         <Field label="Your name" placeholder="e.g. Praneeth" maxLength={24} value={name} onChange={e => setName(e.target.value)} autoFocus />
         <Button type="submit" size="lg" block icon={UserRound} loading={busy} disabled={!name.trim()}>
           Play as a guest
         </Button>
-        <p className="text-xs text-haze">Guests can play straight away with just a name.</p>
+        <Button variant="ghost" size="sm" block icon={ArrowLeft} onClick={onBack}>Other ways to sign in</Button>
       </form>
+  );
+};
+
+const SignInPanel = () => {
+  const [view, setView] = useState('choose'); // choose | email | guest
+  return (
+    <Panel label="Start playing" accent="signal" className="w-full max-w-md" bodyClassName="p-4 sm:p-5">
+      {view === 'email' && <EmailAuthForm onBack={() => setView('choose')} />}
+      {view === 'guest' && <GuestSignIn onBack={() => setView('choose')} />}
+      {view === 'choose' && (
+        <div className="space-y-2.5">
+          <Button size="lg" block icon={Mail} onClick={() => setView('email')}>Continue with email</Button>
+          <Button variant="outline" size="lg" block icon={UserRound} onClick={() => setView('guest')}>Play as a guest</Button>
+          <p className="pt-1 text-xs leading-relaxed text-haze">
+            Guests can play straight away. Sign in with email to keep your auction history on any device.
+          </p>
+        </div>
+      )}
     </Panel>
   );
 };
@@ -81,7 +99,7 @@ const LandingPage = () => {
             <ArrowRight className="text-volt" size={18} />
           </Panel>
         ) : (
-          <GuestSignIn />
+          <SignInPanel />
         )}
       </section>
 

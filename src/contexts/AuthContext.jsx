@@ -7,6 +7,7 @@ import Spinner from '../components/ui/Spinner';
 const toClientUser = (user) => user && {
   uid: user.id,
   displayName: user.name,
+  email: user.email,
   isGuest: user.isGuest,
 };
 
@@ -24,11 +25,25 @@ export const AuthProvider = ({ children }) => {
     return () => { cancelled = true; };
   }, []);
 
-  const loginAsGuest = async (displayName) => {
-    const { user } = await api('/api/auth/guest', { method: 'POST', body: { name: displayName } });
-    const clientUser = toClientUser(user);
+  const applySession = (sessionUser) => {
+    const clientUser = toClientUser(sessionUser);
     setUser(clientUser);
     return clientUser;
+  };
+
+  const loginWithEmail = async (email, password) => {
+    const { user } = await api('/api/auth/login', { method: 'POST', body: { email, password } });
+    return applySession(user);
+  };
+
+  const registerWithEmail = async (name, email, password) => {
+    const { user } = await api('/api/auth/register', { method: 'POST', body: { name, email, password } });
+    return applySession(user);
+  };
+
+  const loginAsGuest = async (displayName) => {
+    const { user } = await api('/api/auth/guest', { method: 'POST', body: { name: displayName } });
+    return applySession(user);
   };
 
   const logout = async () => {
@@ -40,7 +55,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, loginAsGuest, logout }}>
+    <AuthContext.Provider value={{ user, loading, loginWithEmail, registerWithEmail, loginAsGuest, logout }}>
       {loading ? <Spinner className="min-h-dvh" /> : children}
     </AuthContext.Provider>
   );
