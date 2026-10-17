@@ -33,3 +33,24 @@ export function nextBid(currentBid, basePrice) {
   const step = currentBid < 5 ? 0.2 : 0.25;
   return Math.round((currentBid + step) * 100) / 100;
 }
+
+// What the bid button says for each state of the manager's desk
+export function bidButtonLabel(state, nextAmount) {
+  return {
+    leading: 'You lead',
+    closed: 'Bidding closed',
+    full: 'Squad full',
+    overseas: 'Overseas quota full',
+    budget: 'Not enough purse',
+    spectating: 'Pick a franchise to bid',
+    open: `Bid ${formatPrice(nextAmount)}`,
+  }[state];
+}
+
+// The most a team can bid on one player and still afford the rest of its squad at ₹30 L each
+export function maxBidFor(team, squadLimit) {
+  if (!team) return 0;
+  const openSlots = squadLimit - (team.squad?.length || 0);
+  if (openSlots <= 0) return 0;
+  return Math.max(0, Math.round((team.budgetRemaining - (openSlots - 1) * 0.3) * 100) / 100);
+}

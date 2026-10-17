@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Check, Copy, Crown, Gavel, Hourglass, House, Loader2, MessageSquare, RotateCw, SearchX, ShieldX, Timer, UserMinus, UserRound, Users } from 'lucide-react';
+import { Check, Copy, Crown, Gavel, Hourglass, House, Loader2, MessageSquare, Plane, RotateCw, SearchX, ShieldX, Timer, TrendingUp, UserMinus, UserRound, Users, Wallet } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useAuction } from '../hooks/useAuction';
 import { useToast } from '../hooks/useToast';
@@ -295,6 +295,31 @@ const MembersPanel = ({ players, uid, isHost, onKick }) => {
   );
 };
 
+const RulesPanel = ({ room }) => {
+  const rules = [
+    { icon: Users, label: 'Squad', text: `Up to ${room.squadLimit} players` },
+    { icon: Plane, label: 'Overseas', text: `Max ${room.overseasLimit} per squad` },
+    { icon: Wallet, label: 'Purse', text: `₹${formatCrores(room.settings?.budget)} Cr per franchise` },
+    { icon: TrendingUp, label: 'Bid steps', text: '+₹20 L under ₹5 Cr, +₹25 L above' },
+    { icon: Timer, label: 'Clock', text: `Resets to ${room.settings?.bidTimer}s on every bid` },
+  ];
+  return (
+    <Panel label="Rules" bodyClassName="grid grid-cols-1 gap-2 p-3 sm:grid-cols-2 xl:grid-cols-3">
+      {rules.map(({ icon: Icon, label, text }) => (
+        <div key={label} className="flex items-start gap-3 rounded-md border border-white/6 bg-ink-900/50 p-3">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-signal/10 text-signal">
+            <Icon size={15} aria-hidden />
+          </span>
+          <div className="min-w-0">
+            <p className={labelClasses}>{label}</p>
+            <p className="text-sm text-snow">{text}</p>
+          </div>
+        </div>
+      ))}
+    </Panel>
+  );
+};
+
 // ─── Page ───
 
 const Lobby = () => {
@@ -483,30 +508,33 @@ const Lobby = () => {
       />
 
       <div className="mt-4 flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,400px)] lg:items-start">
-        <Panel
-          label="Franchises"
-          actions={<span className="tabular text-xs text-haze">{TEAM_COUNT - managedCount} open</span>}
-          bodyClassName="p-3 sm:p-4"
-        >
-          {!myTeamId && (
-            <p className="mb-3 rounded-md border border-signal/25 bg-signal/[0.06] px-3 py-2.5 text-sm text-mist">
-              Pick an open franchise. You can switch until the auction starts.
-            </p>
-          )}
-          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {TEAMS.map((team) => (
-              <FranchiseTile
-                key={team.id}
-                team={team}
-                holder={holders.get(team.id)}
-                mine={team.id === myTeamId}
-                hasTeam={Boolean(myTeamId)}
-                busy={busy}
-                onPick={() => claimTeam(team.id)}
-              />
-            ))}
-          </ul>
-        </Panel>
+        <div className="flex flex-col gap-4">
+          <Panel
+            label="Franchises"
+            actions={<span className="tabular text-xs text-haze">{TEAM_COUNT - managedCount} open</span>}
+            bodyClassName="p-3 sm:p-4"
+          >
+            {!myTeamId && (
+              <p className="mb-3 rounded-md border border-signal/25 bg-signal/[0.06] px-3 py-2.5 text-sm text-mist">
+                Pick an open franchise. You can switch until the auction starts.
+              </p>
+            )}
+            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {TEAMS.map((team) => (
+                <FranchiseTile
+                  key={team.id}
+                  team={team}
+                  holder={holders.get(team.id)}
+                  mine={team.id === myTeamId}
+                  hasTeam={Boolean(myTeamId)}
+                  busy={busy}
+                  onPick={() => claimTeam(team.id)}
+                />
+              ))}
+            </ul>
+          </Panel>
+          <RulesPanel room={room} />
+        </div>
 
         <div className="flex flex-col gap-4">
           <WaitingPanel isHost={isHost} hostName={hostName} myTeam={myTeam} />

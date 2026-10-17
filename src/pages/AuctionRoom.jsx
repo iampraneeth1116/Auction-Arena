@@ -6,7 +6,7 @@ import { useAuction } from '../hooks/useAuction';
 import { useToast } from '../hooks/useToast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { PLAYERS_BY_ID, TEAMS_BY_ID, ratingOf } from '../lib/catalog';
-import { ROLE_META, formatPrice, isOverseas, nextBid } from '../lib/format';
+import { ROLE_META, bidButtonLabel, formatPrice, isOverseas, maxBidFor, nextBid } from '../lib/format';
 import { cn } from '../lib/cn';
 import PageShell from '../components/ui/PageShell';
 import Panel from '../components/ui/Panel';
@@ -35,14 +35,6 @@ const Countdown = ({ secondsLeft, bidTimer }) => {
       </span>
     </div>
   );
-};
-
-// What the bid button says for each state of the manager's desk
-const BID_LABELS = {
-  leading: 'You lead',
-  closed: 'Bidding closed',
-  budget: 'Not enough purse',
-  spectating: 'Pick a franchise to bid',
 };
 
 const AuctionRoom = () => {
@@ -118,10 +110,16 @@ const AuctionRoom = () => {
   const leaderTeam = TEAMS_BY_ID.get(live?.highBidderTeamId);
   const nextAmount = player ? nextBid(live?.currentBid || 0, player.basePrice) : 0;
 
+  // Your desk: what the next bid costs and whether you can make it (the server checks the same rules)
+  const squadLimit = room.squadLimit;
+  const overseasLimit = room.overseasLimit;
+  const overseasCount = (team?.squad ?? []).filter(s => isOverseas(PLAYERS_BY_ID.get(s.id))).length;
   let bidState = 'open';
   if (!team) bidState = 'spectating';
   else if (live?.status !== 'bidding' || secondsLeft === 0) bidState = 'closed';
   else if (live.highBidderId === user.uid) bidState = 'leading';
+  else if (team.squad.length >= squadLimit) bidState = 'full';
+  else if (isOverseas(player) && overseasCount >= overseasLimit) bidState = 'overseas';
   else if (team.budgetRemaining < nextAmount) bidState = 'budget';
 
   const handleBid = async () => {
@@ -188,9 +186,15 @@ const AuctionRoom = () => {
       <Panel bodyClassName="flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
         <div className="flex flex-1 items-center gap-3">
           <TeamCrest teamId={team?.teamId} size="md" />
-          <div className="grid flex-1 grid-cols-2 gap-4 sm:max-w-sm">
+          <div className="grid flex-1 grid-cols-2 gap-4 sm:max-w-xl sm:grid-cols-4">
             <Stat label="Your purse" value={team ? formatPrice(team.budgetRemaining) : '—'} tone="volt" />
-            <Stat label="Squad" value={team ? `${team.squad.length}/${room.squadLimit}` : '—'} />
+            <Stat label="Squad" value={team ? `${team.squad.length}/${squadLimit}` : '—'} />
+            <Stat label="Overseas" value={team ? `${overseasCount}/${overseasLimit}` : '—'} tone={bidState === 'overseas' ? 'flare' : undefined} />
+            <Stat
+              label="Max bid"
+              value={team ? formatPrice(maxBidFor(team, squadLimit)) : '—'}
+              hint="keeps ₹30 L a slot"
+            />
           </div>
         </div>
         <Button
@@ -203,7 +207,7 @@ const AuctionRoom = () => {
           onClick={handleBid}
           className="sm:min-w-64"
         >
-          {bidState === 'open' ? `Bid ${formatPrice(nextAmount)}` : BID_LABELS[bidState]}
+          {bidButtonLabel(bidState, nextAmount)}
         </Button>
       </Panel>
     </PageShell>

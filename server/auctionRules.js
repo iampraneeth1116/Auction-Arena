@@ -22,6 +22,8 @@ export const TEAMS_BY_ID = new Map(TEAMS.map(t => [t.id, t]));
 export const toLakhs = (crores) => Math.round(crores * 100);
 export const toCrores = (lakhs) => lakhs / 100;
 
+export const isOverseas = (player) => player.country !== 'IND';
+
 // First bid is the base price, then +20 L below ₹5 Cr and +25 L above
 export function nextBidLakhs(currentLakhs, player) {
   if (currentLakhs === 0) return toLakhs(player.basePrice);

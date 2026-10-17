@@ -13,6 +13,7 @@ import {
   TEAMS_BY_ID,
   UNSOLD_CARD_MS,
   buildPlayerOrder,
+  isOverseas,
   nextBidLakhs,
   toCrores,
   toLakhs,
@@ -313,6 +314,20 @@ async function completeRoom(rt, text) {
 
 const squadOf = (rt, member) => rt.purchases.filter(p => p.memberId === member.id);
 
+// Why this member can't buy the player at this price, or null if they can
+function bidProblem(rt, member, player, amount) {
+  const squad = squadOf(rt, member);
+  if (squad.length >= rt.room.squadLimit) {
+    return `You have reached the squad limit of ${rt.room.squadLimit} players!`;
+  }
+  const overseasCount = squad.filter(p => isOverseas(PLAYERS_BY_ID.get(p.playerId))).length;
+  if (isOverseas(player) && overseasCount >= rt.room.overseasLimit) {
+    return `You have reached the overseas quota of ${rt.room.overseasLimit} players!`;
+  }
+  if (member.budgetRemaining < amount) return 'Insufficient Budget';
+  return null;
+}
+
 async function commitBid(rt, member, amount) {
   const nextLive = {
     ...rt.live,
@@ -515,6 +530,8 @@ export function placeBid(rt, userId, expectedAmount) {
 
     const player = PLAYERS_BY_ID.get(live.playerId);
     const amount = nextBidLakhs(live.currentBid, player);
+    const problem = bidProblem(rt, member, player, amount);
+    if (problem) throw new HttpError(409, problem);
     // Someone bid first: never charge more than the price the bidder's button showed
     if (expectedAmount !== undefined && toLakhs(expectedAmount) !== amount) {
       throw new HttpError(409, 'Bid not accepted — the price has moved. Try again.');
