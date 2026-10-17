@@ -1,0 +1,11 @@
+import { createContext, useContext } from 'react';
+
+// Kept apart from AuthProvider so that file only exports a component (needed for Fast Refresh)
+export const AuthContext = createContext({
+  user: null,
+  loading: true,
+  loginAsGuest: async () => {},
+  logout: async () => {},
+});
+
+export const useAuth = () => useContext(AuthContext);

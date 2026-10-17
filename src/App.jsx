@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ToastProvider } from './components/ui/Toast';
+import { AuthProvider } from './contexts/AuthContext';
 import ScrollToTop from './components/ScrollToTop';
 import Spinner from './components/ui/Spinner';
 import LandingPage from './pages/LandingPage';
@@ -13,12 +14,14 @@ function App() {
     <Router>
       <ScrollToTop />
       <ToastProvider>
-        <Suspense fallback={<Spinner className="min-h-dvh" />}>
-          <Routes>
-            <Route path="/" element={<LandingPage />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </Suspense>
+        <AuthProvider>
+          <Suspense fallback={<Spinner className="min-h-dvh" />}>
+            <Routes>
+              <Route path="/" element={<LandingPage />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Suspense>
+        </AuthProvider>
       </ToastProvider>
     </Router>
   );

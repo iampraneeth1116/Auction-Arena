@@ -1,37 +1,88 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { ArrowRight, UserRound } from 'lucide-react';
 import PageShell from '../components/ui/PageShell';
+import Panel from '../components/ui/Panel';
+import Button from '../components/ui/Button';
+import Field from '../components/ui/Field';
 import Tag from '../components/ui/Tag';
 import TeamCrest from '../components/ui/TeamCrest';
 import PlayerPhoto from '../components/ui/PlayerPhoto';
 import RatingBadge from '../components/ui/RatingBadge';
+import { useAuth } from '../hooks/useAuth';
+import { useToast } from '../hooks/useToast';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ratingOf } from '../lib/catalog';
 import { TEAMS } from '../data/teams';
 import { IPL_PLAYERS } from '../data/players';
-import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 // The five highest Arena Ratings, as a taste of the player list
 const TOP_RATED = [...IPL_PLAYERS].sort((a, b) => ratingOf(b.id) - ratingOf(a.id)).slice(0, 5);
 
+const GuestSignIn = () => {
+  const { loginAsGuest } = useAuth();
+  const { toast } = useToast();
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setBusy(true);
+    try {
+      await loginAsGuest(name.trim());
+    } catch (err) {
+      toast({ message: err.message, tone: 'error' });
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Panel label="Start playing" accent="signal" className="w-full max-w-md" bodyClassName="p-4 sm:p-5">
+      <form onSubmit={submit} className="space-y-3">
+        <Field label="Your name" placeholder="e.g. Praneeth" maxLength={24} value={name} onChange={e => setName(e.target.value)} autoFocus />
+        <Button type="submit" size="lg" block icon={UserRound} loading={busy} disabled={!name.trim()}>
+          Play as a guest
+        </Button>
+        <p className="text-xs text-haze">Guests can play straight away with just a name.</p>
+      </form>
+    </Panel>
+  );
+};
+
 const LandingPage = () => {
   useDocumentTitle();
+  const { user } = useAuth();
+
   return (
     <PageShell>
-      <section className="flex min-h-[70dvh] flex-col items-start justify-center gap-5 py-16">
-        <Tag tone="signal">Coming soon</Tag>
-        <h1 className="font-display text-5xl font-extrabold uppercase leading-none sm:text-7xl">
-          Run the IPL auction
-          <br />
-          <span className="text-signal">with your friends</span>
-        </h1>
-        <p className="max-w-xl text-lg text-mist">
-          Claim a franchise, bid live against each other on {IPL_PLAYERS.length} real players, and see who builds the
-          best squad.
-        </p>
-        <div className="mt-4 flex flex-wrap gap-2" aria-label="The ten franchises">
-          {TEAMS.map(team => (
-            <TeamCrest key={team.id} teamId={team.id} size="md" />
-          ))}
+      <section className="grid items-center gap-10 py-12 sm:py-16 lg:grid-cols-[minmax(0,1fr)_24rem]">
+        <div className="space-y-5">
+          <Tag tone="signal">Live IPL auction game</Tag>
+          <h1 className="font-display text-5xl font-extrabold uppercase leading-none sm:text-7xl">
+            Run the IPL auction
+            <br />
+            <span className="text-signal">with your friends</span>
+          </h1>
+          <p className="max-w-xl text-lg text-mist">
+            Claim a franchise, bid live against each other on {IPL_PLAYERS.length} real players, and see who builds the
+            best squad.
+          </p>
+          <div className="flex flex-wrap gap-2" aria-label="The ten franchises">
+            {TEAMS.map(team => (
+              <TeamCrest key={team.id} teamId={team.id} size="md" />
+            ))}
+          </div>
         </div>
+
+        {user ? (
+          <Panel label="Welcome" accent="volt" bodyClassName="space-y-2 p-4 sm:p-5">
+            <p className="font-display text-2xl font-bold uppercase">Hi, {user.displayName}</p>
+            <p className="text-sm text-mist">Hosting and joining rooms is coming next.</p>
+            <ArrowRight className="text-volt" size={18} />
+          </Panel>
+        ) : (
+          <GuestSignIn />
+        )}
       </section>
 
       <section className="pb-16">
