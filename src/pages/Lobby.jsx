@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Check, Copy, Crown, Hourglass, House, Loader2, RotateCw, SearchX, ShieldX, UserRound, Users } from 'lucide-react';
+import { Check, Copy, Crown, Hourglass, House, Loader2, MessageSquare, RotateCw, SearchX, ShieldX, UserRound, Users } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useAuction } from '../hooks/useAuction';
 import { useToast } from '../hooks/useToast';
@@ -18,6 +18,7 @@ import Stat from '../components/ui/Stat';
 import Tag from '../components/ui/Tag';
 import TeamCrest from '../components/ui/TeamCrest';
 import { buttonClasses } from '../components/ui/styles';
+import TextChat from '../components/TextChat';
 
 const TEAM_COUNT = TEAMS.length;
 // Give up waiting for the room after this long and offer a retry
@@ -410,6 +411,9 @@ const Lobby = () => {
         <div className="flex flex-col gap-4">
           <WaitingPanel isHost={isHost} hostName={hostName} myTeam={myTeam} />
           <MembersPanel players={players} uid={uid} />
+          <Panel label="Room chat" actions={<MessageSquare size={14} className="text-haze" aria-hidden />} bodyClassName="h-[420px]">
+            <TextChat roomId={roomCode} canChat={Boolean(me)} />
+          </Panel>
         </div>
       </div>
     </PageShell>

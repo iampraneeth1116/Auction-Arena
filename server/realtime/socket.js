@@ -53,7 +53,7 @@ export function createSocketServer(httpServer) {
         socket.join(rooms.roomChannel(rt.room.id));
         rooms.addPresence(rt, user.id);
       }
-      return { state: rooms.getSnapshot(rt) };
+      return { state: rooms.getSnapshot(rt), messages: await rooms.getRecentMessages(rt.room.id) };
     });
 
     handle('room:leave', async ({ roomId }) => {
@@ -65,6 +65,7 @@ export function createSocketServer(httpServer) {
     });
 
     handle('team:select', async ({ roomId, teamId }) => rooms.selectTeam(await loadRoom(roomId), user.id, teamId));
+    handle('chat:send', async ({ roomId, text, type }) => rooms.sendChat(await loadRoom(roomId), user.id, { text, type }));
 
     socket.on('disconnect', () => {
       for (const roomId of socket.data.rooms) {

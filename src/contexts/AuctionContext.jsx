@@ -10,6 +10,7 @@ export const AuctionProvider = ({ children }) => {
   const { user } = useAuth();
   const [currentAuction, setCurrentAuction] = useState(null);
   const [roomTeams, setRoomTeams] = useState([]);
+  const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   // Why the last room subscription failed (e.g. "Room not found!"), or null
   const [roomError, setRoomError] = useState(null);
@@ -46,6 +47,11 @@ export const AuctionProvider = ({ children }) => {
       setRoomTeams(teams);
     };
 
+    const onMessage = (message) => {
+      if (!active || message.roomId !== normalizedId) return;
+      setMessages(prev => (prev.some(m => m.id === message.id) ? prev : [...prev, message]));
+    };
+
     // Runs on first connect and again after every reconnect
     const join = () => {
       socket.emit('room:join', { roomId: normalizedId }, (res) => {
@@ -54,12 +60,18 @@ export const AuctionProvider = ({ children }) => {
           setRoomError({ message: res.error, code: res.code });
         } else {
           applyState(res.state);
+          // Keep any message that arrived while the history was loading
+          setMessages(prev => {
+            const historyIds = new Set(res.messages.map(m => m.id));
+            return [...res.messages, ...prev.filter(m => !historyIds.has(m.id))];
+          });
         }
         setLoading(false);
       });
     };
 
     socket.on('room:state', applyState);
+    socket.on('chat:message', onMessage);
     socket.on('connect', join);
     if (socket.connected) join();
     else connectSocket();
@@ -67,15 +79,22 @@ export const AuctionProvider = ({ children }) => {
     return () => {
       active = false;
       socket.off('room:state', applyState);
+      socket.off('chat:message', onMessage);
       socket.off('connect', join);
       if (socket.connected) socket.emit('room:leave', { roomId: normalizedId });
       setCurrentAuction(null);
       setRoomTeams([]);
+      setMessages([]);
     };
   }, []);
 
   const selectTeam = useCallback(
     (roomId, teamId) => emitWithAck('team:select', { roomId, teamId }),
+    []
+  );
+
+  const sendMessage = useCallback(
+    (roomId, text, type = 'text') => emitWithAck('chat:send', { roomId, text, type }),
     []
   );
 
@@ -85,10 +104,12 @@ export const AuctionProvider = ({ children }) => {
     roomTeams,
     loading,
     roomError,
+    messages,
     createRoom,
     joinRoom,
     joinAuction,
     selectTeam,
+    sendMessage,
   };
 
   return (

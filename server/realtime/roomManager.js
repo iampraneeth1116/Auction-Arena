@@ -8,6 +8,8 @@ import { AUCTION_MODES, DEFAULT_BID_TIMER, TEAMS_BY_ID, toCrores } from '../auct
 // This is single-process state: running more than one server instance would
 // need a shared store (e.g. Redis) first.
 
+const MESSAGE_HISTORY = 200;
+const CHAT_MIN_INTERVAL_MS = 500;
 // No 0/O or 1/I, so codes are easy to read out to friends
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -38,6 +40,7 @@ function toRuntime(row) {
     members: new Map(row.members.map(m => [m.userId, m])),
     // userId → open connections, so a second tab doesn't flip someone offline
     presence: new Map(),
+    lastChatAt: new Map(),
     queue: Promise.resolve(),
   };
 }
@@ -108,6 +111,33 @@ export function getSnapshot(rt) {
 
 function broadcast(rt) {
   io?.to(roomChannel(rt.room.id)).emit('room:state', getSnapshot(rt));
+}
+
+const toClientMessage = (row) => ({
+  id: row.id,
+  roomId: row.roomId,
+  userId: row.userId ?? 'system',
+  userName: row.userName,
+  text: row.text,
+  type: row.type,
+  metadata: row.metadata,
+  timestamp: row.createdAt.getTime(),
+});
+
+export async function getRecentMessages(roomId) {
+  const rows = await prisma.message.findMany({
+    where: { roomId },
+    orderBy: { createdAt: 'desc' },
+    take: MESSAGE_HISTORY,
+  });
+  return rows.reverse().map(toClientMessage);
+}
+
+async function addMessage(rt, { userId = null, userName = 'System', type = 'log', text, metadata }) {
+  const row = await prisma.message.create({
+    data: { roomId: rt.room.id, userId, userName, type, text, metadata },
+  });
+  io?.to(roomChannel(rt.room.id)).emit('chat:message', toClientMessage(row));
 }
 
 // ─── Presence ───
@@ -224,4 +254,36 @@ export function selectTeam(rt, userId, teamId) {
     rt.members.set(userId, updated);
     broadcast(rt);
   });
+}
+
+// Chat doesn't touch room state, so it skips the room queue
+export async function sendChat(rt, userId, { text, type }) {
+  assertNotBanned(rt, userId);
+  const member = requireMember(rt, userId);
+
+  const now = Date.now();
+  if (now - (rt.lastChatAt.get(userId) || 0) < CHAT_MIN_INTERVAL_MS) {
+    throw new HttpError(429, 'Slow down a little');
+  }
+
+  const content = typeof text === 'string' ? text.trim() : '';
+  if (type === 'text') {
+    if (!content || content.length > 150) throw new HttpError(400, 'Messages must be 1–150 characters');
+  } else if (type === 'gif') {
+    let url;
+    try {
+      url = new URL(content);
+    } catch {
+      throw new HttpError(400, 'Invalid GIF');
+    }
+    // Only Giphy media, so chat can't be used to load arbitrary tracking images
+    if (url.protocol !== 'https:' || !url.hostname.endsWith('giphy.com') || content.length > 500) {
+      throw new HttpError(400, 'Invalid GIF');
+    }
+  } else {
+    throw new HttpError(400, 'Unknown message type');
+  }
+
+  rt.lastChatAt.set(userId, now);
+  await addMessage(rt, { userId, userName: member.displayName, type, text: content });
 }
