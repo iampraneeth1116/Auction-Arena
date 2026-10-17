@@ -1,6 +1,9 @@
 import React from 'react';
 import PageShell from '../components/ui/PageShell';
 import Tag from '../components/ui/Tag';
+import TeamCrest from '../components/ui/TeamCrest';
+import { TEAMS } from '../data/teams';
+import { IPL_PLAYERS } from '../data/players';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 const LandingPage = () => {
@@ -15,8 +18,14 @@ const LandingPage = () => {
           <span className="text-signal">with your friends</span>
         </h1>
         <p className="max-w-xl text-lg text-mist">
-          Claim a franchise, bid live against each other on real players, and see who builds the best squad.
+          Claim a franchise, bid live against each other on {IPL_PLAYERS.length} real players, and see who builds the
+          best squad.
         </p>
+        <div className="mt-4 flex flex-wrap gap-2" aria-label="The ten franchises">
+          {TEAMS.map(team => (
+            <TeamCrest key={team.id} teamId={team.id} size="md" />
+          ))}
+        </div>
       </section>
     </PageShell>
   );
