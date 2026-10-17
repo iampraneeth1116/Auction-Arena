@@ -21,3 +21,7 @@ npm run dev          # React app on http://localhost:5173 (proxies /api to the s
 ```
 
 In production, `npm run build && npm start` serves the built app and the API from one Node process.
+
+## Testing
+
+`npm test` starts the real server on its own port and plays through sign-in, rooms, the live lobby, chat, host controls and a short auction over HTTP and Socket.IO. It writes test users and rooms, so it only runs against a local database (the Docker one above); it refuses any other host unless `ALLOW_REMOTE_TEST_DB=1` is set.
