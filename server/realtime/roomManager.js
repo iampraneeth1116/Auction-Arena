@@ -518,7 +518,7 @@ export function joinRoom(rt, user) {
   });
 }
 
-// Claims a franchise, or switches to another one while the room is still waiting
+// Claims a franchise (taking it over from its bot before the start), or switches to another one
 export function selectTeam(rt, userId, teamId) {
   return exclusive(rt, async () => {
     assertNotBanned(rt, userId);
@@ -529,7 +529,13 @@ export function selectTeam(rt, userId, teamId) {
     if (squadOf(rt, member).length > 0) {
       throw new HttpError(409, "You can't switch franchises after buying players");
     }
-    if ([...rt.members.values()].some(m => m.teamId === teamId)) {
+    const holder = [...rt.members.values()].find(m => m.teamId === teamId);
+    // Before the auction starts, a person can take a franchise over from its bot
+    if (holder?.isBot && rt.room.status === 'waiting') {
+      await prisma.roomMember.delete({ where: { id: holder.id } });
+      rt.members.delete(holder.userId);
+      await addMessage(rt, { text: `${member.displayName} took over ${holder.teamId} from its bot` });
+    } else if (holder) {
       throw new HttpError(409, 'That franchise is already taken');
     }
 

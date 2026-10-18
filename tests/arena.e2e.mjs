@@ -37,7 +37,6 @@ try {
   check('host adds a bot to CSK', one.ok && one.added.join() === 'CSK', JSON.stringify(one));
   check('a bot cannot take a taken franchise', /already taken/.test((await host.emit('bots:add', { roomId, teamId: 'MI' })).error || ''));
   check('an unknown franchise is refused', /Unknown franchise/.test((await host.emit('bots:add', { roomId, teamId: 'XYZ' })).error || ''));
-  check('a person cannot pick a bot\'s franchise yet', /already taken/.test((await friend.emit('team:select', { roomId, teamId: 'CSK' })).error || ''));
   const fill = await host.emit('bots:add', { roomId });
   check('fill adds a bot to every open franchise', fill.ok && fill.added.length === 8, JSON.stringify(fill));
   check('nothing left to fill', /Every franchise/.test((await host.emit('bots:add', { roomId })).error || ''));
@@ -51,13 +50,23 @@ try {
   check('host removes the RCB bot', (await host.emit('bots:remove', { roomId, teamId: 'RCB' })).ok);
   check('RCB is open again', await eventually(friend, () => !friend.state.players.some(p => p.team === 'RCB'), 3000, 'rcb open'));
   check('the friend takes RCB', (await friend.emit('team:select', { roomId, teamId: 'RCB' })).ok);
-  check('removing a bot that isn\'t there is refused', /No bot/.test((await host.emit('bots:remove', { roomId, teamId: 'RCB' })).error || ''));
+
+  // Taking a franchise over from its bot
+  const takeover = await friend.emit('team:select', { roomId, teamId: 'CSK' });
+  check('a person can take a franchise over from its bot', takeover.ok, JSON.stringify(takeover));
+  check('the bot leaves and the person manages CSK', await eventually(host, () =>
+    !host.state.players.some(p => p.isBot && p.team === 'CSK') && host.state.players.find(p => p.id === friend.user.id)?.team === 'CSK', 3000, 'takeover'));
+  check('RCB is free again after the switch', !host.state.players.some(p => p.team === 'RCB'));
+  check('the takeover is logged', await eventually(host, () => host.events.some(e => e.event === 'chat:message' && /took over CSK from its bot/.test(e.payload.text)), 3000, 'takeover log'));
+  check('host puts a bot back on RCB', (await host.emit('bots:add', { roomId, teamId: 'RCB' })).ok);
+  check('removing a bot from a franchise a person manages is refused', /No bot/.test((await host.emit('bots:remove', { roomId, teamId: 'MI' })).error || ''));
 
   // ─── Bots bid on their own ───
   await host.emit('settings:update', { roomId, bidTimer: 3 });
   check('the auction starts with 8 bots and 2 people', (await host.emit('auction:start', { roomId })).ok);
   check('bots cannot be added once the auction is running', /before the auction starts/.test((await host.emit('bots:add', { roomId, teamId: 'RCB' })).error || ''));
   check('bots cannot be removed once the auction is running', /before the auction starts/.test((await host.emit('bots:remove', { roomId })).error || ''));
+  check('a bot\'s franchise cannot be taken over once the auction is running', /already taken/.test((await friend.emit('team:select', { roomId, teamId: 'KKR' })).error || ''));
   check('a bot bids on its own', await eventually(host, () => host.state.currentAuction?.highBidderId?.startsWith('bot_'), 15000, 'a bot bid'));
   // A bots' bidding war on a star can run a few minutes: every bid resets the clock
   check('a bot wins a player', await eventually(host, () => host.state.teams.some(t => t.userId.startsWith('bot_') && t.squad.length > 0), 240000, 'a bot sale'));

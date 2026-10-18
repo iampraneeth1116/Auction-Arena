@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Bot, BotOff, Check, Copy, Crown, Gavel, Hourglass, House, Loader2, MessageSquare, Plane, RotateCw, SearchX, ShieldX, Timer, TrendingUp, UserMinus, UserRound, Users, Wallet } from 'lucide-react';
+import { Bot, BotOff, Check, Copy, Crown, Gavel, Hourglass, House, Loader2, MessageSquare, Plane, RotateCw, SearchX, ShieldX, Timer, TrendingUp, UserMinus, UserPlus, UserRound, Users, Wallet } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useAuction } from '../hooks/useAuction';
 import { useToast } from '../hooks/useToast';
@@ -107,9 +107,11 @@ const RoomHeader = ({ room, roomCode, isHost, hostName, managedCount, onlineCoun
   );
 };
 
-const FranchiseTile = ({ team, holder, mine, hasTeam, busy, onPick }) => {
+const FranchiseTile = ({ team, holder, mine, hasTeam, isHost, busy, onPick, onAddBot, onRemoveBot }) => {
   const state = mine ? 'mine' : !holder ? 'open' : holder.isBot ? 'bot' : 'taken';
+  const locked = Boolean(busy);
   const picking = busy === `team:${team.id}`;
+  const botBusy = busy === `bot:${team.id}`;
 
   const content = (
     <>
@@ -144,10 +146,12 @@ const FranchiseTile = ({ team, holder, mine, hasTeam, busy, onPick }) => {
     </>
   );
 
+  const showFooter = state === 'bot' || (state === 'open' && isHost);
+
   return (
     <li
       className={cn(
-        'relative overflow-hidden rounded-md border transition-colors',
+        'relative flex flex-col overflow-hidden rounded-md border transition-colors',
         state === 'mine' && 'border-volt/60 bg-volt/[0.07]',
         state === 'open' && 'border-dashed border-ink-500 bg-ink-900/40 hover:border-signal/60',
         (state === 'taken' || state === 'bot') && 'border-white/8 bg-ink-900/60',
@@ -158,7 +162,7 @@ const FranchiseTile = ({ team, holder, mine, hasTeam, busy, onPick }) => {
         <button
           type="button"
           onClick={onPick}
-          disabled={Boolean(busy)}
+          disabled={locked}
           aria-label={`${hasTeam ? 'Switch to' : 'Pick'} ${team.name}`}
           className="flex w-full items-center gap-3 py-3 pl-4 pr-3 text-left transition-colors hover:bg-signal/[0.05] disabled:cursor-default cursor-pointer"
         >
@@ -166,6 +170,26 @@ const FranchiseTile = ({ team, holder, mine, hasTeam, busy, onPick }) => {
         </button>
       ) : (
         <div className="flex items-center gap-3 py-3 pl-4 pr-3">{content}</div>
+      )}
+
+      {showFooter && (
+        <div className="flex flex-wrap items-center justify-end gap-1.5 border-t border-white/6 bg-ink-950/30 py-1.5 pl-4 pr-2">
+          {state === 'bot' && (
+            <Button variant="outline" size="sm" icon={UserPlus} loading={picking} disabled={locked} onClick={onPick} aria-label={`Take over ${team.name} from its bot`}>
+              Take over
+            </Button>
+          )}
+          {state === 'bot' && isHost && (
+            <Button variant="ghost" size="sm" icon={BotOff} loading={botBusy} disabled={locked} onClick={onRemoveBot} aria-label={`Remove the ${team.name} bot`}>
+              Remove bot
+            </Button>
+          )}
+          {state === 'open' && isHost && (
+            <Button variant="ghost" size="sm" icon={Bot} loading={botBusy} disabled={locked} onClick={onAddBot} aria-label={`Add a bot to manage ${team.name}`}>
+              Add bot
+            </Button>
+          )}
+        </div>
       )}
     </li>
   );
@@ -428,10 +452,16 @@ const Lobby = () => {
     }
   };
 
-  const claimTeam = (teamId) =>
-    run(`team:${teamId}`, () => selectTeam(roomCode, teamId), () => {
-      toast({ message: `You're managing ${TEAMS_BY_ID.get(teamId).name}`, tone: 'success' });
+  const claimTeam = (teamId) => {
+    const team = TEAMS_BY_ID.get(teamId);
+    const fromBot = Boolean(holders.get(teamId)?.isBot);
+    return run(`team:${teamId}`, () => selectTeam(roomCode, teamId), () => {
+      toast({ message: fromBot ? `You took over ${team.name} from its bot` : `You're managing ${team.name}`, tone: 'success' });
     });
+  };
+
+  const addBot = (teamId) => run(`bot:${teamId}`, () => addBots(roomCode, teamId));
+  const removeBot = (teamId) => run(`bot:${teamId}`, () => removeBots(roomCode, teamId));
 
   const startNow = () =>
     run('start', () => startAuction(roomCode), () => {
@@ -555,7 +585,7 @@ const Lobby = () => {
           >
             {!myTeamId && (
               <p className="mb-3 rounded-md border border-signal/25 bg-signal/[0.06] px-3 py-2.5 text-sm text-mist">
-                Pick an open franchise. You can switch until the auction starts.
+                Pick an open franchise{botCount > 0 ? ' or take one over from a bot' : ''}. You can switch until the auction starts.
               </p>
             )}
             <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -566,8 +596,11 @@ const Lobby = () => {
                   holder={holders.get(team.id)}
                   mine={team.id === myTeamId}
                   hasTeam={Boolean(myTeamId)}
+                  isHost={isHost}
                   busy={busy}
                   onPick={() => claimTeam(team.id)}
+                  onAddBot={() => addBot(team.id)}
+                  onRemoveBot={() => removeBot(team.id)}
                 />
               ))}
             </ul>
