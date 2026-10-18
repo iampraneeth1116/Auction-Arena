@@ -14,6 +14,8 @@ export const AuctionProvider = ({ children }) => {
   const [loading, setLoading] = useState(false);
   // Why the last room subscription failed (e.g. "Room not found!"), or null
   const [roomError, setRoomError] = useState(null);
+  // Every raise on the lot currently under the hammer, newest last
+  const [bidTrail, setBidTrail] = useState([]);
 
   const team = user ? roomTeams.find(t => t.userId === user.uid) || null : null;
 
@@ -47,6 +49,25 @@ export const AuctionProvider = ({ children }) => {
       const { teams, ...room } = state;
       setCurrentAuction(room);
       setRoomTeams(teams);
+
+      // The server sends whole states, so the trail is built from each new high bid
+      const live = room.currentAuction;
+      setBidTrail(trail => {
+        if (!live) return [];
+        const sameLot = trail.length > 0 && trail[0].playerId === live.playerId;
+        const kept = sameLot ? trail : [];
+        const last = kept[kept.length - 1];
+        if (!live.currentBid || (last && last.amount >= live.currentBid)) return kept;
+        const entry = {
+          playerId: live.playerId,
+          amount: live.currentBid,
+          teamId: live.highBidderTeamId,
+          bidderId: live.highBidderId,
+          bidderName: live.highBidderName,
+          at: Date.now(),
+        };
+        return [...kept, entry].slice(-30);
+      });
     };
 
     const onMessage = (message) => {
@@ -98,6 +119,7 @@ export const AuctionProvider = ({ children }) => {
       setCurrentAuction(null);
       setRoomTeams([]);
       setMessages([]);
+      setBidTrail([]);
     };
   }, []);
 
@@ -155,6 +177,7 @@ export const AuctionProvider = ({ children }) => {
     loading,
     roomError,
     messages,
+    bidTrail,
     getSyncedTime,
     createRoom,
     joinRoom,

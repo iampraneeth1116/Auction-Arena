@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
-import { Check, Copy, History, Home, MessageSquare, Pause, Play, Radio, Settings, ShieldAlert, Square, Trophy } from 'lucide-react';
+import { Check, Copy, History, Home, List, MessageSquare, Pause, Play, Radio, Settings, ShieldAlert, Square, Trophy } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useAuction } from '../hooks/useAuction';
 import { useToast } from '../hooks/useToast';
@@ -8,6 +8,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { useRoomSounds } from '../hooks/useRoomSounds';
 import { useAuctioneer } from '../hooks/useAuctioneer';
+import { IPL_PLAYERS } from '../data/players';
 import { PLAYERS_BY_ID } from '../lib/catalog';
 import { MODE_META, formatPrice, isOverseas, maxBidFor, nextBid } from '../lib/format';
 import { cn } from '../lib/cn';
@@ -27,6 +28,10 @@ import PriceBoard from '../components/auction/PriceBoard';
 import BidConsole from '../components/auction/BidConsole';
 import ResultBanner from '../components/auction/ResultBanner';
 import RoomSettingsModal from '../components/auction/RoomSettingsModal';
+import PlayerPoolModal from '../components/auction/PlayerPoolModal';
+import LiveBidBar from '../components/auction/LiveBidBar';
+import BidTrail from '../components/auction/BidTrail';
+import UpNext from '../components/auction/UpNext';
 import TeamBoard from '../components/auction/TeamBoard';
 import ActivityFeed from '../components/auction/ActivityFeed';
 
@@ -78,7 +83,7 @@ const AuctionRoom = () => {
   const { toast } = useToast();
   const { user, loading: authLoading } = useAuth();
   const {
-    currentAuction, roomTeams, team, loading, roomError, messages,
+    currentAuction, roomTeams, team, loading, roomError, messages, bidTrail,
     joinAuction, placeBid, pauseAuction, resumeAuction, endAuction, updateRoomSettings, getSyncedTime,
   } = useAuction();
   useDocumentTitle(`Live ${id}`);
@@ -89,6 +94,7 @@ const AuctionRoom = () => {
   const [mobileTab, setMobileTab] = useState('stage');
   const [sideTab, setSideTab] = useState('feed');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [poolOpen, setPoolOpen] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const wideScreen = useMediaQuery('(min-width: 1280px)');
 
@@ -119,8 +125,12 @@ const AuctionRoom = () => {
   const voice = useAuctioneer({ live, roomStatus: currentAuction?.status });
 
   const player = PLAYERS_BY_ID.get(live?.playerId);
-  const playerOrder = currentAuction?.playerOrder ?? [];
+  const playerOrder = useMemo(() => currentAuction?.playerOrder ?? [], [currentAuction?.playerOrder]);
   const lotIndex = currentAuction?.currentIndex ?? -1;
+  const upNext = useMemo(
+    () => (lotIndex >= 0 ? playerOrder.slice(lotIndex + 1, lotIndex + 5).map(i => IPL_PLAYERS[i]) : []),
+    [playerOrder, lotIndex],
+  );
   const players = currentAuction?.players ?? [];
   const isHost = currentAuction?.hostId === user?.uid;
   const squadLimit = currentAuction?.squadLimit ?? 25;
@@ -243,6 +253,7 @@ const AuctionRoom = () => {
         {player && <LotCard player={player} lot={null} />}
         <div className="h-px bg-white/6" />
         <PriceBoard live={live} timeLeft={live?.status === 'bidding' ? timeLeft : 0} bidTimer={bidTimer} leaderName={leaderName} basePrice={player?.basePrice} />
+        <BidTrail trail={bidTrail} myId={user.uid} />
         <ResultBanner live={live} player={player} buyerName={leaderName} />
       </Panel>
 
@@ -258,6 +269,8 @@ const AuctionRoom = () => {
           onBid={handleBid}
         />
       </div>
+
+      <UpNext players={upNext} onShowAll={() => setPoolOpen(true)} />
     </div>
   );
 
@@ -303,6 +316,7 @@ const AuctionRoom = () => {
               </Button>
             </>
           )}
+          <IconButton icon={List} label="Player pool" onClick={() => setPoolOpen(true)} />
           <IconButton icon={Settings} label="Settings" onClick={() => setSettingsOpen(true)} />
           {team && (
             <>
@@ -379,6 +393,24 @@ const AuctionRoom = () => {
         ))}
       </nav>
 
+      <PlayerPoolModal
+        open={poolOpen}
+        onClose={() => setPoolOpen(false)}
+        playerOrder={playerOrder}
+        currentIndex={lotIndex}
+        currentPlayerId={live?.playerId}
+        roomTeams={roomTeams}
+        footer={team ? (
+          <LiveBidBar
+            player={player}
+            live={live}
+            timeLeft={live?.status === 'bidding' ? timeLeft : null}
+            state={bidState}
+            nextAmount={nextAmount}
+            onBid={handleBid}
+          />
+        ) : null}
+      />
       <RoomSettingsModal
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
