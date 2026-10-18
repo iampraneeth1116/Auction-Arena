@@ -28,6 +28,7 @@ import { shareElementAsImage } from '../lib/shareImage';
 const TABS = [
   { id: 'standings', label: 'Standings', icon: ListOrdered },
   { id: 'squads', label: 'Squads', icon: Users },
+  { id: 'top', label: 'Top buys', icon: Gavel },
 ];
 const TAB_IDS = new Set(TABS.map(t => t.id));
 
@@ -73,6 +74,17 @@ function buildResults(auction, roomTeams, userId) {
     strongest: standings[0]?.players.length ? standings[0] : null,
     totalSpent: sold.reduce((sum, p) => sum + p.bid, 0),
   };
+}
+
+// Rating vs price: what similarly rated players (±5) went for in this room
+function valueRead(player, sold) {
+  const peers = sold.filter(p => p.id !== player.id && Math.abs(p.rating - player.rating) <= 5);
+  if (peers.length < 2 || player.bid <= 0) return null;
+  const typical = peers.reduce((sum, p) => sum + p.bid, 0) / peers.length;
+  const ratio = typical / player.bid;
+  if (ratio >= 1.2) return { label: 'Good value', tone: 'volt', typical };
+  if (ratio <= 0.8) return { label: 'Paid extra', tone: 'flare', typical };
+  return { label: 'Fair price', tone: 'neutral', typical };
 }
 
 // The poster is mounted off-screen only while it's being exported; give the
@@ -338,6 +350,62 @@ const SquadsTab = ({ results, overseasLimit, sharing, onShare }) => {
   );
 };
 
+// ─── Top buys ───
+
+const TopBuysTab = ({ results }) => {
+  const top = results.sold.slice(0, 10);
+  if (!top.length) {
+    return (
+      <Panel>
+        <EmptyState icon={Gavel} title="No sales yet">Once players are sold, the ten biggest buys show up here.</EmptyState>
+      </Panel>
+    );
+  }
+  return (
+    <Panel label="Ten biggest buys" bodyClassName="p-0">
+      <p className="border-b border-white/6 px-4 py-2.5 text-xs text-haze">
+        Value compares each price with what players rated within 5 points of them went for in this room.
+      </p>
+      <ol className="divide-y divide-white/6">
+        {top.map((player, index) => {
+          const value = valueRead(player, results.sold);
+          return (
+            <li key={player.id} className="flex items-center gap-3 px-4 py-3">
+              <span className={cn('w-6 shrink-0 font-display text-xl font-bold tabular', index === 0 ? 'text-gold' : 'text-haze')}>{index + 1}</span>
+              <PlayerPhoto player={player} className="size-10 shrink-0 text-sm sm:size-11" />
+              <div className="min-w-0 flex-1">
+                <p className="font-display text-lg font-bold uppercase leading-tight tracking-wide">
+                  {player.name}
+                  {isOverseas(player) && <OverseasMark />}
+                </p>
+                <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-haze">
+                  <span className="inline-flex min-w-0 items-center gap-1.5">
+                    <TeamCrest teamId={player.teamId} size="xs" />
+                    <span className="truncate text-mist">{player.teamId}</span>
+                  </span>
+                  <span>{ROLE_META[player.role]?.short}</span>
+                  {value ? (
+                    <>
+                      <Tag tone={value.tone}>{value.label}</Tag>
+                      <span className="hidden tabular sm:inline">similar players ~{formatPrice(value.typical)}</span>
+                    </>
+                  ) : (
+                    <span className="hidden sm:inline">No similar sales to compare</span>
+                  )}
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-col items-end gap-1 sm:flex-row-reverse sm:items-center sm:gap-4">
+                <span className="text-right font-display text-lg font-bold tabular sm:w-24 sm:text-xl">{formatPrice(player.bid)}</span>
+                <RatingBadge rating={player.rating} />
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </Panel>
+  );
+};
+
 // ─── Page ───
 
 const Centered = ({ children }) => (
@@ -481,6 +549,7 @@ const AuctionSummary = () => {
           {tab === 'squads' && (
             <SquadsTab results={results} overseasLimit={currentAuction.overseasLimit} sharing={sharing} onShare={shareSquad} />
           )}
+          {tab === 'top' && <TopBuysTab results={results} />}
         </motion.div>
       </div>
 
