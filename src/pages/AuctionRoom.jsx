@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
-import { Check, Copy, History, Home, MessageSquare, Radio, ShieldAlert, Trophy, Volume2, VolumeX } from 'lucide-react';
+import { Check, Copy, History, Home, MessageSquare, Radio, Settings, ShieldAlert, Trophy } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useAuction } from '../hooks/useAuction';
 import { useToast } from '../hooks/useToast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { useRoomSounds } from '../hooks/useRoomSounds';
+import { useAuctioneer } from '../hooks/useAuctioneer';
 import { PLAYERS_BY_ID } from '../lib/catalog';
 import { MODE_META, formatPrice, isOverseas, maxBidFor, nextBid } from '../lib/format';
 import { cn } from '../lib/cn';
@@ -23,8 +24,20 @@ import LotCard from '../components/auction/LotCard';
 import PriceBoard from '../components/auction/PriceBoard';
 import BidConsole from '../components/auction/BidConsole';
 import ResultBanner from '../components/auction/ResultBanner';
+import RoomSettingsModal from '../components/auction/RoomSettingsModal';
 import TeamBoard from '../components/auction/TeamBoard';
 import ActivityFeed from '../components/auction/ActivityFeed';
+
+const IconButton = ({ icon: Icon, label, onClick, className }) => (
+  <button
+    onClick={onClick}
+    className={cn('flex size-9 items-center justify-center rounded-md text-mist hover:bg-white/5 hover:text-snow cursor-pointer', className)}
+    aria-label={label}
+    title={label}
+  >
+    <Icon size={18} />
+  </button>
+);
 
 const FullScreenNotice = ({ icon: Icon, title, children }) => (
   <div className="flex min-h-dvh items-center justify-center bg-grid px-4">
@@ -62,7 +75,7 @@ const AuctionRoom = () => {
   const id = rawId.toUpperCase();
   const { toast } = useToast();
   const { user, loading: authLoading } = useAuth();
-  const { currentAuction, roomTeams, team, loading, roomError, messages, joinAuction, placeBid, getSyncedTime } = useAuction();
+  const { currentAuction, roomTeams, team, loading, roomError, messages, joinAuction, placeBid, updateRoomSettings, getSyncedTime } = useAuction();
   useDocumentTitle(`Live ${id}`);
 
   const [optimistic, setOptimistic] = useState(null);
@@ -70,6 +83,7 @@ const AuctionRoom = () => {
   const [copied, setCopied] = useState(false);
   const [mobileTab, setMobileTab] = useState('stage');
   const [sideTab, setSideTab] = useState('feed');
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const wideScreen = useMediaQuery('(min-width: 1280px)');
 
   useEffect(() => (user?.uid ? joinAuction(id) : undefined), [id, user?.uid, joinAuction]);
@@ -96,16 +110,13 @@ const AuctionRoom = () => {
   const secondsLeft = live?.status === 'bidding' ? timeLeft : 0;
 
   const sounds = useRoomSounds({ live, timeLeft: secondsLeft });
-  const soundOn = sounds.effects || sounds.anthems;
-  const toggleSound = () => {
-    sounds.setEffects(!soundOn);
-    sounds.setAnthems(!soundOn);
-  };
+  const voice = useAuctioneer({ live, roomStatus: currentAuction?.status });
 
   const player = PLAYERS_BY_ID.get(live?.playerId);
   const playerOrder = currentAuction?.playerOrder ?? [];
   const lotIndex = currentAuction?.currentIndex ?? -1;
   const players = currentAuction?.players ?? [];
+  const isHost = currentAuction?.hostId === user?.uid;
   const squadLimit = currentAuction?.squadLimit ?? 25;
   const overseasLimit = currentAuction?.overseasLimit ?? 8;
   const bidTimer = currentAuction?.settings?.bidTimer ?? 10;
@@ -177,6 +188,14 @@ const AuctionRoom = () => {
     () => messages.filter(m => m.type === 'sold_card').slice(-12).reverse(),
     [messages],
   );
+
+  const setBidTimer = async (seconds) => {
+    try {
+      await updateRoomSettings(id, { bidTimer: seconds });
+    } catch (err) {
+      toast({ message: err.message, tone: 'error' });
+    }
+  };
 
   const copyCode = async () => {
     try {
@@ -262,15 +281,7 @@ const AuctionRoom = () => {
           {MODE_META[currentAuction.auctionType]?.short}
         </span>
         <div className="ml-auto flex items-center gap-2">
-          <button
-            onClick={toggleSound}
-            className="flex size-9 items-center justify-center rounded-md text-mist hover:bg-white/5 hover:text-snow cursor-pointer"
-            aria-label={soundOn ? 'Turn sound off' : 'Turn sound on'}
-            aria-pressed={soundOn}
-            title={soundOn ? 'Sound on' : 'Sound off'}
-          >
-            {soundOn ? <Volume2 size={18} /> : <VolumeX size={18} />}
-          </button>
+          <IconButton icon={Settings} label="Settings" onClick={() => setSettingsOpen(true)} />
           {team && (
             <>
               <TeamCrest teamId={team.teamId} size="sm" />
@@ -345,6 +356,16 @@ const AuctionRoom = () => {
           </button>
         ))}
       </nav>
+
+      <RoomSettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        isHost={isHost}
+        bidTimer={bidTimer}
+        onTimer={setBidTimer}
+        voice={voice}
+        sounds={sounds}
+      />
     </div>
   );
 };
