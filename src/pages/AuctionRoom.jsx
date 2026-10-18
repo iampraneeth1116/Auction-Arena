@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
-import { Check, Copy, History, Home, MessageSquare, Radio, ShieldAlert, Trophy } from 'lucide-react';
+import { Check, Copy, History, Home, MessageSquare, Radio, ShieldAlert, Trophy, Volume2, VolumeX } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useAuction } from '../hooks/useAuction';
 import { useToast } from '../hooks/useToast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useMediaQuery } from '../hooks/useMediaQuery';
+import { useRoomSounds } from '../hooks/useRoomSounds';
 import { PLAYERS_BY_ID } from '../lib/catalog';
 import { MODE_META, formatPrice, isOverseas, maxBidFor, nextBid } from '../lib/format';
 import { cn } from '../lib/cn';
@@ -21,6 +22,7 @@ import TextChat from '../components/TextChat';
 import LotCard from '../components/auction/LotCard';
 import PriceBoard from '../components/auction/PriceBoard';
 import BidConsole from '../components/auction/BidConsole';
+import ResultBanner from '../components/auction/ResultBanner';
 import TeamBoard from '../components/auction/TeamBoard';
 import ActivityFeed from '../components/auction/ActivityFeed';
 
@@ -93,6 +95,13 @@ const AuctionRoom = () => {
   }, [live?.status, live?.timerEndsAt, getSyncedTime]);
   const secondsLeft = live?.status === 'bidding' ? timeLeft : 0;
 
+  const sounds = useRoomSounds({ live, timeLeft: secondsLeft });
+  const soundOn = sounds.effects || sounds.anthems;
+  const toggleSound = () => {
+    sounds.setEffects(!soundOn);
+    sounds.setAnthems(!soundOn);
+  };
+
   const player = PLAYERS_BY_ID.get(live?.playerId);
   const playerOrder = currentAuction?.playerOrder ?? [];
   const lotIndex = currentAuction?.currentIndex ?? -1;
@@ -116,6 +125,7 @@ const AuctionRoom = () => {
 
   const handleBid = async () => {
     if (bidState !== 'open' || !team) return;
+    sounds.beep(760, 0.07);
     setOptimistic({
       ...live,
       currentBid: nextAmount,
@@ -128,6 +138,7 @@ const AuctionRoom = () => {
       await placeBid(nextAmount);
     } catch (err) {
       setOptimistic(null);
+      sounds.beep(220, 0.25);
       toast({ message: err.message, tone: 'error' });
     }
   };
@@ -205,11 +216,7 @@ const AuctionRoom = () => {
         {player && <LotCard player={player} lot={null} />}
         <div className="h-px bg-white/6" />
         <PriceBoard live={live} timeLeft={live?.status === 'bidding' ? timeLeft : 0} bidTimer={bidTimer} leaderName={leaderName} basePrice={player?.basePrice} />
-        {(live?.status === 'sold' || live?.status === 'unsold') && (
-          <p className={cn('text-center font-display text-4xl font-extrabold uppercase tracking-wide', live.status === 'sold' ? 'text-volt' : 'text-flare')}>
-            {live.status === 'sold' ? `Sold to ${live.highBidderTeamId} · ${formatPrice(live.currentBid)}` : 'Unsold'}
-          </p>
-        )}
+        <ResultBanner live={live} player={player} buyerName={leaderName} />
       </Panel>
 
       <div className="sticky bottom-16 z-10 -mx-3 bg-ink-950/90 px-3 py-2 backdrop-blur sm:static sm:mx-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
@@ -254,12 +261,23 @@ const AuctionRoom = () => {
         <span className="hidden font-display text-sm uppercase tracking-wider text-haze md:inline">
           {MODE_META[currentAuction.auctionType]?.short}
         </span>
-        {team && (
-          <span className="ml-auto flex items-center gap-2">
-            <TeamCrest teamId={team.teamId} size="sm" />
-            <span className="hidden font-display text-sm font-semibold uppercase tracking-wide sm:inline">{team.teamName}</span>
-          </span>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={toggleSound}
+            className="flex size-9 items-center justify-center rounded-md text-mist hover:bg-white/5 hover:text-snow cursor-pointer"
+            aria-label={soundOn ? 'Turn sound off' : 'Turn sound on'}
+            aria-pressed={soundOn}
+            title={soundOn ? 'Sound on' : 'Sound off'}
+          >
+            {soundOn ? <Volume2 size={18} /> : <VolumeX size={18} />}
+          </button>
+          {team && (
+            <>
+              <TeamCrest teamId={team.teamId} size="sm" />
+              <span className="hidden font-display text-sm font-semibold uppercase tracking-wide sm:inline">{team.teamName}</span>
+            </>
+          )}
+        </div>
       </header>
 
       <div className="flex min-h-0 flex-1">
