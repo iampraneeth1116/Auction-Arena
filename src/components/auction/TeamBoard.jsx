@@ -1,5 +1,5 @@
 import React, { memo, useMemo, useState } from 'react';
-import { ChevronDown, Crown } from 'lucide-react';
+import { Bot, ChevronDown, Crown } from 'lucide-react';
 import TeamCrest from '../ui/TeamCrest';
 import RatingBadge from '../ui/RatingBadge';
 import Tag from '../ui/Tag';
@@ -44,10 +44,11 @@ const TeamBoard = ({ roomTeams, players, squadLimit, overseasLimit, myId }) => {
                 <span className="flex items-center gap-1.5">
                   <span className="font-display text-base font-bold uppercase">{team.id}</span>
                   {mine && <Tag tone="volt">You</Tag>}
+                  {manager?.isBot && <Tag icon={Bot}>Bot</Tag>}
                   {manager?.isHost && <Crown size={12} className="text-gold" aria-label="Host" />}
                 </span>
                 <span className="flex items-center gap-1.5 truncate text-xs text-haze">
-                  <span className={cn('size-1.5 rounded-full', manager?.isOnline ? 'bg-volt' : 'bg-ink-500')} />
+                  {!manager?.isBot && <span className={cn('size-1.5 rounded-full', manager?.isOnline ? 'bg-volt' : 'bg-ink-500')} />}
                   <span className="truncate">{manager?.name ?? 'Manager'}</span>
                 </span>
               </span>

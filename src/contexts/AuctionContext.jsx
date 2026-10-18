@@ -128,6 +128,18 @@ export const AuctionProvider = ({ children }) => {
     []
   );
 
+  // Without a teamId: a bot for every open franchise
+  const addBots = useCallback(
+    (roomId, teamId) => emitWithAck('bots:add', { roomId, teamId }),
+    []
+  );
+
+  // Without a teamId: every bot leaves
+  const removeBots = useCallback(
+    (roomId, teamId) => emitWithAck('bots:remove', { roomId, teamId }),
+    []
+  );
+
   const startAuction = useCallback(
     (roomId) => emitWithAck('auction:start', { roomId }),
     []
@@ -183,6 +195,8 @@ export const AuctionProvider = ({ children }) => {
     joinRoom,
     joinAuction,
     selectTeam,
+    addBots,
+    removeBots,
     startAuction,
     placeBid,
     pauseAuction,

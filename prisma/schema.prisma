@@ -22,6 +22,7 @@ model User {
   googleId     String?  @unique
   avatarUrl    String?
   isGuest      Boolean  @default(false)
+  isBot        Boolean  @default(false) // one per franchise, id "bot_<TEAM>"; can never sign in
   createdAt    DateTime @default(now())
 
   refreshTokens RefreshToken[]
@@ -71,6 +72,7 @@ model RoomMember {
   displayName     String
   teamId          String?
   budgetRemaining Int
+  isBot           Boolean  @default(false)
   joinedAt        DateTime @default(now())
 
   purchases Purchase[]

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Check, Copy, Crown, Gavel, Hourglass, House, Loader2, MessageSquare, Plane, RotateCw, SearchX, ShieldX, Timer, TrendingUp, UserMinus, UserRound, Users, Wallet } from 'lucide-react';
+import { Bot, BotOff, Check, Copy, Crown, Gavel, Hourglass, House, Loader2, MessageSquare, Plane, RotateCw, SearchX, ShieldX, Timer, TrendingUp, UserMinus, UserRound, Users, Wallet } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useAuction } from '../hooks/useAuction';
 import { useToast } from '../hooks/useToast';
@@ -108,7 +108,7 @@ const RoomHeader = ({ room, roomCode, isHost, hostName, managedCount, onlineCoun
 };
 
 const FranchiseTile = ({ team, holder, mine, hasTeam, busy, onPick }) => {
-  const state = mine ? 'mine' : holder ? 'taken' : 'open';
+  const state = mine ? 'mine' : !holder ? 'open' : holder.isBot ? 'bot' : 'taken';
   const picking = busy === `team:${team.id}`;
 
   const content = (
@@ -126,6 +126,7 @@ const FranchiseTile = ({ team, holder, mine, hasTeam, busy, onPick }) => {
               <span className="sr-only">{holder.isHost ? '(host) ' : ''}{holder.isOnline ? 'online' : 'away'}</span>
             </>
           )}
+          {state === 'bot' && <span>Bids on its own</span>}
           {state === 'open' && (
             <span>
               {team.city} · <span className="text-signal">Open</span>
@@ -134,6 +135,7 @@ const FranchiseTile = ({ team, holder, mine, hasTeam, busy, onPick }) => {
         </div>
       </div>
       {state === 'mine' && <Tag tone="volt">You</Tag>}
+      {state === 'bot' && <Tag icon={Bot}>Bot</Tag>}
       {state === 'open' && (
         <span className="clip-slant inline-flex h-6 min-w-14 items-center justify-center bg-signal/15 px-3 font-display text-xs font-bold uppercase tracking-wider text-signal">
           {picking ? <Loader2 size={13} className="animate-spin" /> : hasTeam ? 'Switch' : 'Pick'}
@@ -148,7 +150,7 @@ const FranchiseTile = ({ team, holder, mine, hasTeam, busy, onPick }) => {
         'relative overflow-hidden rounded-md border transition-colors',
         state === 'mine' && 'border-volt/60 bg-volt/[0.07]',
         state === 'open' && 'border-dashed border-ink-500 bg-ink-900/40 hover:border-signal/60',
-        state === 'taken' && 'border-white/8 bg-ink-900/60',
+        (state === 'taken' || state === 'bot') && 'border-white/8 bg-ink-900/60',
       )}
     >
       <span className="absolute inset-y-0 left-0 w-1" style={{ background: team.colors.primary }} aria-hidden />
@@ -194,7 +196,7 @@ const WaitingPanel = ({ isHost, hostName, myTeam }) => (
   </Panel>
 );
 
-const HostControls = ({ room, busy, managedCount, canStart, onStart, onTimer }) => {
+const HostControls = ({ room, busy, managedCount, openCount, botCount, canStart, onStart, onFillBots, onClearBots, onTimer }) => {
   const bidTimer = room.settings?.bidTimer;
   return (
     <Panel label="Host controls" accent="signal" bodyClassName="divide-y divide-white/6">
@@ -205,8 +207,25 @@ const HostControls = ({ room, busy, managedCount, canStart, onStart, onTimer }) 
         <p className="text-center text-xs text-haze">
           {canStart
             ? `${managedCount} of ${TEAM_COUNT} franchises will take part.`
-            : 'You need at least 2 managed franchises to start. Invite friends to join.'}
+            : 'You need at least 2 managed franchises to start. Invite friends or add bots.'}
         </p>
+      </div>
+      <div className="space-y-3 p-4">
+        <div className="flex items-center gap-2">
+          <Bot size={15} className="text-signal" aria-hidden />
+          <h3 className={labelClasses}>Bots</h3>
+        </div>
+        <p className="text-sm leading-relaxed text-mist">
+          Bots run franchises nobody picked and bid on their own under the same purse and squad rules.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" icon={Bot} loading={busy === 'bots:fill'} disabled={openCount === 0 || Boolean(busy)} onClick={onFillBots}>
+            Fill empty with bots
+          </Button>
+          <Button variant="ghost" size="sm" icon={BotOff} loading={busy === 'bots:clear'} disabled={botCount === 0 || Boolean(busy)} onClick={onClearBots}>
+            Remove all bots
+          </Button>
+        </div>
       </div>
       <div className="space-y-2.5 p-4">
         <div className="flex items-baseline justify-between gap-3">
@@ -242,10 +261,15 @@ const HostControls = ({ room, busy, managedCount, canStart, onStart, onTimer }) 
 };
 
 const MembersPanel = ({ players, uid, isHost, onKick }) => {
-  // Host first, otherwise in join order
-  const ordered = [...players].sort((a, b) => Number(b.isHost) - Number(a.isHost));
+  const people = players.filter((p) => !p.isBot).length;
+  const bots = players.length - people;
+  // Host first, people before bots, otherwise in join order
+  const ordered = [...players].sort((a, b) => Number(b.isHost) - Number(a.isHost) || Number(a.isBot) - Number(b.isBot));
   return (
-    <Panel label="In the room" actions={<span className="tabular text-xs text-haze">{players.length === 1 ? '1 person' : `${players.length} people`}</span>}>
+    <Panel
+      label="In the room"
+      actions={<span className="tabular text-xs text-haze">{people === 1 ? '1 person' : `${people} people`} · {bots === 1 ? '1 bot' : `${bots} bots`}</span>}
+    >
       <ul className="max-h-96 divide-y divide-white/6 overflow-y-auto scrollbar-thin">
         {ordered.map((p) => {
           const team = TEAMS_BY_ID.get(p.team);
@@ -268,15 +292,16 @@ const MembersPanel = ({ players, uid, isHost, onKick }) => {
                     </span>
                   )}
                   {p.id === uid && <Tag tone="volt">You</Tag>}
+                  {p.isBot && <Tag icon={Bot}>Bot</Tag>}
                 </div>
                 <div className="flex min-w-0 items-center gap-1.5 text-xs text-haze">
                   <OnlineDot online={p.isOnline} />
-                  <span className="shrink-0">{p.isOnline ? 'Online' : 'Away'}</span>
+                  <span className="shrink-0">{p.isBot ? 'Ready' : p.isOnline ? 'Online' : 'Away'}</span>
                   <span aria-hidden>·</span>
                   <span className="truncate">{team ? team.name : 'No franchise yet'}</span>
                 </div>
               </div>
-              {isHost && p.id !== uid && (
+              {isHost && !p.isBot && p.id !== uid && (
                 <button
                   type="button"
                   onClick={() => onKick(p)}
@@ -329,7 +354,7 @@ const Lobby = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const {
-    currentAuction, loading: roomLoading, roomError, joinAuction, joinRoom, selectTeam, startAuction, updateRoomSettings, kickPlayer,
+    currentAuction, loading: roomLoading, roomError, joinAuction, joinRoom, selectTeam, addBots, removeBots, startAuction, updateRoomSettings, kickPlayer,
   } = useAuction();
   useDocumentTitle(`Lobby ${roomCode}`);
 
@@ -414,6 +439,18 @@ const Lobby = () => {
       navigate(`/auction/${roomCode}`, { replace: true });
     });
 
+  const fillWithBots = () =>
+    run('bots:fill', () => addBots(roomCode), (res) => {
+      const count = res?.added?.length ?? 0;
+      toast({ message: `${count} bot${count === 1 ? '' : 's'} joined the room`, tone: 'success' });
+    });
+
+  const clearBots = () =>
+    run('bots:clear', () => removeBots(roomCode), (res) => {
+      const count = res?.removed?.length ?? 0;
+      toast({ message: `${count} bot${count === 1 ? '' : 's'} left the room`, tone: 'success' });
+    });
+
   const setBidTimer = (bidTimer) => run(`timer:${bidTimer}`, () => updateRoomSettings(roomCode, { bidTimer }));
 
   const confirmKick = () => {
@@ -485,7 +522,8 @@ const Lobby = () => {
   const isHost = room.hostId === uid;
   const hostName = players.find((p) => p.isHost)?.name ?? 'the host';
   const managedCount = holders.size;
-  const onlineCount = players.filter((p) => p.isOnline).length;
+  const onlineCount = players.filter((p) => !p.isBot && p.isOnline).length;
+  const botCount = players.filter((p) => p.isBot).length;
   const myTeam = TEAMS_BY_ID.get(myTeamId) ?? null;
   const canStart = managedCount >= 2;
 
@@ -540,7 +578,18 @@ const Lobby = () => {
         <div className="flex flex-col gap-4">
           <WaitingPanel isHost={isHost} hostName={hostName} myTeam={myTeam} />
           {isHost && (
-            <HostControls room={room} busy={busy} managedCount={managedCount} canStart={canStart} onStart={requestStart} onTimer={setBidTimer} />
+            <HostControls
+              room={room}
+              busy={busy}
+              managedCount={managedCount}
+              openCount={TEAM_COUNT - managedCount}
+              botCount={botCount}
+              canStart={canStart}
+              onStart={requestStart}
+              onFillBots={fillWithBots}
+              onClearBots={clearBots}
+              onTimer={setBidTimer}
+            />
           )}
           <MembersPanel players={players} uid={uid} isHost={isHost} onKick={setKickTarget} />
           <Panel label="Room chat" actions={<MessageSquare size={14} className="text-haze" aria-hidden />} bodyClassName="h-[420px]">

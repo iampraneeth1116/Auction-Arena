@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { prisma } from '../db.js';
 import { IPL_PLAYERS } from '../../src/data/players.js';
 import { HttpError } from '../validation.js';
+import { botHesitates, botName, botOffer, botThinkMs, botUserId, readMarket, rollMood } from '../bots.js';
 import {
   AUCTION_MODES,
   DEFAULT_BID_TIMER,
@@ -60,6 +61,10 @@ function toRuntime(row) {
     // The player under the hammer: bid, high bidder, deadline and status
     live: row.liveState ?? null,
     timer: null,
+    botTimer: null,
+    // Each bot's mood for the current lot, so it can't change its mind mid-bidding
+    botMoods: new Map(),
+    market: null,
     // userId → open connections, so a second tab doesn't flip someone offline
     presence: new Map(),
     lastChatAt: new Map(),
@@ -91,8 +96,10 @@ async function loadRuntime(roomId) {
   // After a restart, a running auction picks up where it left off: the saved
   // deadline still stands (an expired one resolves at once), or the lot reopens
   if (rt.room.status === 'active') {
-    if (rt.live) scheduleNext(rt);
-    else await exclusive(rt, () => startPlayer(rt, rt.room.currentIndex, FIRST_PLAYER_MS));
+    if (rt.live) {
+      scheduleNext(rt);
+      scheduleBots(rt);
+    } else await exclusive(rt, () => startPlayer(rt, rt.room.currentIndex, FIRST_PLAYER_MS));
   }
   return rt;
 }
@@ -129,7 +136,8 @@ export function getSnapshot(rt) {
       team: m.teamId || '',
       teamName: teamName(m.teamId),
       isHost: m.userId === room.hostId,
-      isOnline: rt.presence.has(m.userId),
+      isBot: m.isBot,
+      isOnline: m.isBot || rt.presence.has(m.userId),
     })),
     teams: members.filter(m => m.teamId).map(m => ({
       id: `${room.id}_${m.userId}`,
@@ -205,6 +213,14 @@ function clearTimer(rt) {
     clearTimeout(rt.timer);
     rt.timer = null;
   }
+  clearBotTimer(rt);
+}
+
+function clearBotTimer(rt) {
+  if (rt.botTimer) {
+    clearTimeout(rt.botTimer);
+    rt.botTimer = null;
+  }
 }
 
 // Arms the one timer a room needs for what it's doing now: closing bidding on
@@ -250,8 +266,10 @@ async function startPlayer(rt, index, durationMs) {
   await prisma.room.update({ where: { id: rt.room.id }, data: { currentIndex: index, liveState: live } });
   rt.room.currentIndex = index;
   rt.live = live;
+  rt.botMoods.clear();
   broadcast(rt);
   scheduleNext(rt);
+  scheduleBots(rt);
 }
 
 async function resolvePlayer(rt) {
@@ -259,6 +277,7 @@ async function resolvePlayer(rt) {
   if (room.status !== 'active' || live?.status !== 'bidding') return;
   // A bid that landed after this timer was armed moved the deadline
   if (live.timerEndsAt > Date.now()) return scheduleNext(rt);
+  clearBotTimer(rt);
 
   const player = PLAYERS_BY_ID.get(live.playerId);
   const buyer = live.highBidderId ? rt.members.get(live.highBidderId) : null;
@@ -355,6 +374,75 @@ async function commitBid(rt, member, amount) {
   rt.live = nextLive;
   broadcast(rt);
   scheduleNext(rt);
+  scheduleBots(rt);
+}
+
+// ─── Bots ───
+
+const botsIn = (rt) => [...rt.members.values()].filter(m => m.isBot && m.teamId);
+
+// Every bid the bots would make on the current player, keenest first
+function botOffers(rt) {
+  const { live, room } = rt;
+  const player = PLAYERS_BY_ID.get(live.playerId);
+  // The market only changes when a lot changes hands, so read it once per lot
+  if (rt.market?.playerId !== live.playerId) {
+    const managers = [...rt.members.values()].filter(m => m.teamId);
+    rt.market = {
+      playerId: live.playerId,
+      ...readMarket({
+        playerOrder: room.playerOrder,
+        currentIndex: room.currentIndex,
+        openSlotsByTeam: managers.map(m => room.squadLimit - squadOf(rt, m).length),
+      }),
+    };
+  }
+  const offers = [];
+  for (const bot of botsIn(rt)) {
+    const moodKey = `${live.playerId}:${bot.userId}`;
+    if (!rt.botMoods.has(moodKey)) rt.botMoods.set(moodKey, rollMood());
+    const squadPlayers = squadOf(rt, bot).map(p => PLAYERS_BY_ID.get(p.playerId));
+    const offer = botOffer({ live, member: bot, squadPlayers, room, market: rt.market, mood: rt.botMoods.get(moodKey) });
+    if (offer && !bidProblem(rt, bot, player, offer.amount)) offers.push({ bot, ...offer });
+  }
+  return offers.sort((a, b) => b.eagerness - a.eagerness);
+}
+
+// After every change to live bidding, give the bots one chance to respond
+function scheduleBots(rt) {
+  clearBotTimer(rt);
+  const { live, room } = rt;
+  if (room.status !== 'active' || live?.status !== 'bidding' || botsIn(rt).length === 0) return;
+
+  const remainingMs = live.timerEndsAt - Date.now();
+  const offers = botOffers(rt);
+  if (remainingMs < 1000 || offers.length === 0) return;
+  rt.botTimer = setTimeout(() => {
+    rt.botTimer = null;
+    exclusive(rt, () => botTurn(rt)).catch(err => console.error(`[room ${room.id}] bot turn failed`, err));
+  }, botThinkMs(room.bidTimer, remainingMs, offers[0].eagerness));
+}
+
+async function botTurn(rt) {
+  const { live, room } = rt;
+  if (room.status !== 'active' || live?.status !== 'bidding' || live.timerEndsAt - Date.now() < 300) return;
+
+  const offers = botOffers(rt).filter(offer => !botHesitates(offer));
+  if (offers.length === 0) return;
+  // The keener a bot is, the likelier it is to be the one that raises
+  let pick = Math.random() * offers.reduce((sum, o) => sum + o.eagerness + 0.1, 0);
+  const chosen = offers.find(o => (pick -= o.eagerness + 0.1) <= 0) ?? offers[0];
+  await commitBid(rt, chosen.bot, chosen.amount);
+}
+
+async function ensureBotUser(teamId) {
+  const id = botUserId(teamId);
+  await prisma.user.upsert({
+    where: { id },
+    create: { id, name: botName(teamId), isBot: true },
+    update: {},
+  });
+  return id;
 }
 
 // ─── Guards ───
@@ -482,6 +570,7 @@ export function kickMember(rt, hostId, targetUserId) {
     if (targetUserId === hostId) throw new HttpError(400, "You can't remove yourself");
     const target = rt.members.get(targetUserId);
     if (!target) throw new HttpError(404, 'That player is not in this room');
+    if (target.isBot) throw new HttpError(400, 'Remove bots with the bot controls instead');
 
     const bannedUserIds = [...new Set([...rt.room.bannedUserIds, targetUserId])];
     // A removed manager can't stay the high bidder
@@ -507,6 +596,51 @@ export function kickMember(rt, hostId, targetUserId) {
     io?.in(userChannel(targetUserId)).socketsLeave(roomChannel(rt.room.id));
     await addMessage(rt, { text: `${target.displayName} has been removed from the room.` });
     broadcast(rt);
+  });
+}
+
+// Puts a bot in every franchise nobody has claimed, or just the one asked for
+export function addBots(rt, userId, teamId = null) {
+  return exclusive(rt, async () => {
+    requireHost(rt, userId);
+    if (rt.room.status !== 'waiting') throw new HttpError(409, 'Bots can only be added before the auction starts');
+    const taken = new Set([...rt.members.values()].map(m => m.teamId).filter(Boolean));
+    const teamIds = teamId ? [teamId] : [...TEAMS_BY_ID.keys()].filter(id => !taken.has(id));
+    if (teamId && !TEAMS_BY_ID.has(teamId)) throw new HttpError(400, 'Unknown franchise');
+    if (teamId && taken.has(teamId)) throw new HttpError(409, 'That franchise is already taken');
+    if (teamIds.length === 0) throw new HttpError(409, 'Every franchise already has a manager');
+
+    for (const id of teamIds) {
+      const member = await prisma.roomMember.create({
+        data: {
+          roomId: rt.room.id,
+          userId: await ensureBotUser(id),
+          displayName: botName(id),
+          teamId: id,
+          budgetRemaining: rt.room.budget,
+          isBot: true,
+        },
+      });
+      rt.members.set(member.userId, member);
+    }
+    await addMessage(rt, { text: teamIds.length === 1 ? `${botName(teamIds[0])} joined` : `${teamIds.length} bots joined the room` });
+    broadcast(rt);
+    return { added: teamIds };
+  });
+}
+
+// Removes one bot (by franchise), or every bot when no franchise is given
+export function removeBots(rt, userId, teamId = null) {
+  return exclusive(rt, async () => {
+    requireHost(rt, userId);
+    if (rt.room.status !== 'waiting') throw new HttpError(409, 'Bots can only be removed before the auction starts');
+    const bots = [...rt.members.values()].filter(m => m.isBot && (!teamId || m.teamId === teamId));
+    if (bots.length === 0) throw new HttpError(404, 'No bot to remove');
+
+    await prisma.roomMember.deleteMany({ where: { id: { in: bots.map(b => b.id) } } });
+    bots.forEach(b => rt.members.delete(b.userId));
+    broadcast(rt);
+    return { removed: bots.map(b => b.teamId) };
   });
 }
 
@@ -584,6 +718,7 @@ export function resumeAuction(rt, userId) {
     await addMessage(rt, { text: 'Auction RESUMED by the host' });
     broadcast(rt);
     scheduleNext(rt);
+    scheduleBots(rt);
   });
 }
 

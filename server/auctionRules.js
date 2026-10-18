@@ -1,5 +1,6 @@
 import { IPL_PLAYERS } from '../src/data/players.js';
 import { TEAMS } from '../src/data/teams.js';
+import { buildRatings } from '../src/lib/playerRating.js';
 
 // Money is whole lakhs on the server (1 Cr = 100 L) so repeated increments never
 // pick up floating-point drift. The client sends and receives crores.
@@ -18,6 +19,7 @@ export const UNSOLD_CARD_MS = 2000;
 
 export const PLAYERS_BY_ID = new Map(IPL_PLAYERS.map(p => [p.id, p]));
 export const TEAMS_BY_ID = new Map(TEAMS.map(t => [t.id, t]));
+export const RATINGS = buildRatings(IPL_PLAYERS);
 
 export const toLakhs = (crores) => Math.round(crores * 100);
 export const toCrores = (lakhs) => lakhs / 100;
