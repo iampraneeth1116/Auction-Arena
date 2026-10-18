@@ -85,8 +85,15 @@ async function loadRuntime(roomId) {
     include: { members: true, purchases: { orderBy: { createdAt: 'asc' } } },
   });
   if (!row) return null;
+
   const rt = toRuntime(row);
   runtimes.set(roomId, rt);
+  // After a restart, a running auction picks up where it left off: the saved
+  // deadline still stands (an expired one resolves at once), or the lot reopens
+  if (rt.room.status === 'active') {
+    if (rt.live) scheduleNext(rt);
+    else await exclusive(rt, () => startPlayer(rt, rt.room.currentIndex, FIRST_PLAYER_MS));
+  }
   return rt;
 }
 
@@ -216,7 +223,7 @@ function scheduleNext(rt) {
     dueAt = live.resolvedAt + (live.status === 'sold' ? SOLD_CARD_MS : UNSOLD_CARD_MS);
     task = advance;
   } else {
-    return;
+    return; // paused: nothing runs until the host resumes
   }
 
   rt.timer = setTimeout(() => {
@@ -545,6 +552,47 @@ export function placeBid(rt, userId, expectedAmount) {
 
     await commitBid(rt, member, amount);
     return { currentBid: toCrores(amount) };
+  });
+}
+
+export function pauseAuction(rt, userId) {
+  return exclusive(rt, async () => {
+    requireHost(rt, userId);
+    // Only live bidding can pause: pausing on a SOLD card would reopen a sold player on resume
+    if (rt.room.status !== 'active' || rt.live?.status !== 'bidding') {
+      throw new HttpError(409, 'Only live bidding can be paused');
+    }
+    const pausedLive = { ...rt.live, status: 'paused' };
+    await prisma.room.update({ where: { id: rt.room.id }, data: { liveState: pausedLive } });
+    rt.live = pausedLive;
+    clearTimer(rt);
+    await addMessage(rt, { text: 'Auction PAUSED by the host' });
+    broadcast(rt);
+  });
+}
+
+export function resumeAuction(rt, userId) {
+  return exclusive(rt, async () => {
+    requireHost(rt, userId);
+    if (rt.room.status !== 'active' || rt.live?.status !== 'paused') {
+      throw new HttpError(409, 'The auction is not paused');
+    }
+    // The current bid stands and the clock restarts in full
+    const resumedLive = { ...rt.live, status: 'bidding', timerEndsAt: Date.now() + rt.room.bidTimer * 1000 };
+    await prisma.room.update({ where: { id: rt.room.id }, data: { liveState: resumedLive } });
+    rt.live = resumedLive;
+    await addMessage(rt, { text: 'Auction RESUMED by the host' });
+    broadcast(rt);
+    scheduleNext(rt);
+  });
+}
+
+// Ends the auction early; squads bought so far are final
+export function endAuction(rt, userId) {
+  return exclusive(rt, async () => {
+    requireHost(rt, userId);
+    if (rt.room.status === 'completed') return;
+    await completeRoom(rt, 'Auction ended by the host');
   });
 }
 

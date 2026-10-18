@@ -1,6 +1,6 @@
 import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Gavel } from 'lucide-react';
+import { Gavel, PauseCircle } from 'lucide-react';
 import TeamCrest from '../ui/TeamCrest';
 import { TEAMS_BY_ID } from '../../lib/catalog';
 import { formatPrice } from '../../lib/format';
@@ -9,7 +9,7 @@ import { formatPrice } from '../../lib/format';
 const ResultBanner = ({ live, player, buyerName }) => {
   const status = live?.status;
   const team = TEAMS_BY_ID.get(live?.highBidderTeamId);
-  const show = status === 'sold' || status === 'unsold';
+  const show = status === 'sold' || status === 'unsold' || status === 'paused';
 
   return (
     <AnimatePresence>
@@ -59,6 +59,14 @@ const ResultBanner = ({ live, player, buyerName }) => {
             >
               <div className="font-display text-6xl font-extrabold uppercase leading-none text-haze line-through decoration-flare decoration-4">Unsold</div>
               <p className="mt-2 font-display text-lg uppercase tracking-wide text-mist">No bids for {player?.name}</p>
+            </motion.div>
+          )}
+
+          {status === 'paused' && (
+            <motion.div className="text-center" initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
+              <PauseCircle size={48} className="mx-auto text-gold" />
+              <div className="mt-2 font-display text-4xl font-extrabold uppercase">Paused</div>
+              <p className="text-sm text-mist">The host paused bidding. The clock restarts when they resume.</p>
             </motion.div>
           )}
         </motion.div>

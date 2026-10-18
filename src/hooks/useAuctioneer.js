@@ -93,6 +93,7 @@ export function useAuctioneer({ live, roomStatus }) {
       spoken.current = { ...last, playerId: live.playerId, status: live.status };
       if (live.status === 'sold') speak(`Sold! ${player.name} to ${teamName} for ${priceForSpeech(live.currentBid)}.`);
       if (live.status === 'unsold') speak(`${player.name} goes unsold.`);
+      if (live.status === 'paused') speak('The auction is paused.');
     }
   }, [live, roomStatus, speak]);
 

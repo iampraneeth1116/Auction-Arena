@@ -49,6 +49,7 @@ export function bidButtonLabel(state, nextAmount) {
   return {
     leading: 'You lead',
     closed: 'Bidding closed',
+    paused: 'Paused',
     full: 'Squad full',
     overseas: 'Overseas quota full',
     budget: 'Not enough purse',

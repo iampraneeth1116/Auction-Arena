@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
-import { Check, Copy, History, Home, MessageSquare, Radio, Settings, ShieldAlert, Trophy } from 'lucide-react';
+import { Check, Copy, History, Home, MessageSquare, Pause, Play, Radio, Settings, ShieldAlert, Square, Trophy } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useAuction } from '../hooks/useAuction';
 import { useToast } from '../hooks/useToast';
@@ -13,6 +13,8 @@ import { MODE_META, formatPrice, isOverseas, maxBidFor, nextBid } from '../lib/f
 import { cn } from '../lib/cn';
 import Logo from '../components/ui/Logo';
 import Panel from '../components/ui/Panel';
+import Button from '../components/ui/Button';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
 import Segmented from '../components/ui/Segmented';
 import Spinner from '../components/ui/Spinner';
 import { LiveTag } from '../components/ui/Tag';
@@ -75,7 +77,10 @@ const AuctionRoom = () => {
   const id = rawId.toUpperCase();
   const { toast } = useToast();
   const { user, loading: authLoading } = useAuth();
-  const { currentAuction, roomTeams, team, loading, roomError, messages, joinAuction, placeBid, updateRoomSettings, getSyncedTime } = useAuction();
+  const {
+    currentAuction, roomTeams, team, loading, roomError, messages,
+    joinAuction, placeBid, pauseAuction, resumeAuction, endAuction, updateRoomSettings, getSyncedTime,
+  } = useAuction();
   useDocumentTitle(`Live ${id}`);
 
   const [optimistic, setOptimistic] = useState(null);
@@ -84,6 +89,7 @@ const AuctionRoom = () => {
   const [mobileTab, setMobileTab] = useState('stage');
   const [sideTab, setSideTab] = useState('feed');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [confirmEnd, setConfirmEnd] = useState(false);
   const wideScreen = useMediaQuery('(min-width: 1280px)');
 
   useEffect(() => (user?.uid ? joinAuction(id) : undefined), [id, user?.uid, joinAuction]);
@@ -128,7 +134,8 @@ const AuctionRoom = () => {
   const maxBid = maxBidFor(team, squadLimit);
   let bidState = 'open';
   if (!team) bidState = 'spectating';
-  else if (!live || live.status !== 'bidding' || secondsLeft === 0) bidState = 'closed';
+  else if (!live || live.status === 'paused') bidState = 'paused';
+  else if (live.status !== 'bidding' || secondsLeft === 0) bidState = 'closed';
   else if (live.highBidderId === user?.uid) bidState = 'leading';
   else if ((team.squad?.length ?? 0) >= squadLimit) bidState = 'full';
   else if (isOverseas(player) && overseasCount >= overseasLimit) bidState = 'overseas';
@@ -189,13 +196,14 @@ const AuctionRoom = () => {
     [messages],
   );
 
-  const setBidTimer = async (seconds) => {
+  const runHostAction = async (action) => {
     try {
-      await updateRoomSettings(id, { bidTimer: seconds });
+      await action(id);
     } catch (err) {
       toast({ message: err.message, tone: 'error' });
     }
   };
+  const setBidTimer = (seconds) => runHostAction(roomId => updateRoomSettings(roomId, { bidTimer: seconds }));
 
   const copyCode = async () => {
     try {
@@ -280,12 +288,26 @@ const AuctionRoom = () => {
         <span className="hidden font-display text-sm uppercase tracking-wider text-haze md:inline">
           {MODE_META[currentAuction.auctionType]?.short}
         </span>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-0.5 sm:gap-1">
+          {isHost && (
+            <>
+              {live?.status === 'paused' ? (
+                <Button size="sm" variant="volt" icon={Play} onClick={() => runHostAction(resumeAuction)}>Resume</Button>
+              ) : (
+                <Button size="sm" variant="outline" icon={Pause} onClick={() => runHostAction(pauseAuction)} disabled={live?.status !== 'bidding'}>
+                  <span className="hidden sm:inline">Pause</span>
+                </Button>
+              )}
+              <Button size="sm" variant="danger" icon={Square} onClick={() => setConfirmEnd(true)} aria-label="End auction">
+                <span className="hidden sm:inline">End</span>
+              </Button>
+            </>
+          )}
           <IconButton icon={Settings} label="Settings" onClick={() => setSettingsOpen(true)} />
           {team && (
             <>
-              <TeamCrest teamId={team.teamId} size="sm" />
-              <span className="hidden font-display text-sm font-semibold uppercase tracking-wide sm:inline">{team.teamName}</span>
+              <TeamCrest teamId={team.teamId} size="sm" className="ml-1" />
+              <span className="hidden font-display text-sm font-semibold uppercase tracking-wide xl:inline">{team.teamName}</span>
             </>
           )}
         </div>
@@ -365,6 +387,17 @@ const AuctionRoom = () => {
         onTimer={setBidTimer}
         voice={voice}
         sounds={sounds}
+      />
+      <ConfirmDialog
+        open={confirmEnd}
+        title="End the auction now?"
+        message="Bidding stops for everyone and the remaining players won't be auctioned. Squads bought so far are final."
+        confirmLabel="End auction"
+        onConfirm={() => {
+          setConfirmEnd(false);
+          runHostAction(endAuction);
+        }}
+        onCancel={() => setConfirmEnd(false)}
       />
     </div>
   );

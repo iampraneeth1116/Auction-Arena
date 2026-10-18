@@ -117,6 +117,21 @@ export const AuctionProvider = ({ children }) => {
     await emitWithAck('bid:place', { roomId: currentAuction.id, amount });
   }, [currentAuction]);
 
+  const pauseAuction = useCallback(
+    (roomId) => emitWithAck('auction:pause', { roomId }),
+    []
+  );
+
+  const resumeAuction = useCallback(
+    (roomId) => emitWithAck('auction:resume', { roomId }),
+    []
+  );
+
+  const endAuction = useCallback(
+    (roomId) => emitWithAck('auction:end', { roomId }),
+    []
+  );
+
   // settings: { bidTimer } — anything left out keeps its current value
   const updateRoomSettings = useCallback(
     (roomId, settings) => emitWithAck('settings:update', { roomId, ...settings }),
@@ -147,6 +162,9 @@ export const AuctionProvider = ({ children }) => {
     selectTeam,
     startAuction,
     placeBid,
+    pauseAuction,
+    resumeAuction,
+    endAuction,
     updateRoomSettings,
     kickPlayer,
     sendMessage,

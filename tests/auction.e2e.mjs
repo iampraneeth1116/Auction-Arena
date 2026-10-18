@@ -1,5 +1,6 @@
-// End-to-end: auth, rooms, the live lobby, chat, host controls, server-run bidding
-// and the squad / overseas / purse rules, against a real server and database.
+// End-to-end: auth, rooms, the live lobby, chat, host controls, server-run bidding,
+// pause / resume / end, restart recovery and the squad / overseas / purse rules,
+// against a real server and database.
 import { TestClient, createChecker, startServer } from './helpers.mjs';
 import { prisma } from '../server/db.js';
 import { IPL_PLAYERS } from '../src/data/players.js';
@@ -12,7 +13,7 @@ const { check, failedCount, printSummary } = createChecker();
 const step = (crores) => Math.round(crores * 100 + (crores < 5 ? 20 : 25)) / 100;
 const isOverseas = (player) => player.country !== 'IND';
 
-const server = await startServer({ port: PORT, env: SERVER_ENV });
+let server = await startServer({ port: PORT, env: SERVER_ENV });
 const base = server.url;
 
 // waitFor as a yes/no, so a slow step fails one check instead of the whole run
@@ -135,6 +136,42 @@ try {
   check('the next player comes up after the SOLD card', await eventually(alice, () => alice.state.currentIndex === 1 && alice.state.currentAuction?.status === 'bidding', 8000, 'next'));
   check('with no bids the lot goes unsold', await eventually(alice, () => alice.state.currentAuction?.status === 'unsold', 6000, 'unsold'));
   check('a buyer cannot switch franchise', /after buying players/.test((await bob.emit('team:select', { roomId, teamId: 'RCB' })).error || ''));
+
+  // ─── Pause, resume, restart, end ───
+  check('the third lot opens', await eventually(alice, () => alice.state.currentIndex === 2 && alice.state.currentAuction?.status === 'bidding', 6000, 'lot 3'));
+  check('only the host pauses', /Only the host/.test((await bob.emit('auction:pause', { roomId })).error || ''));
+  const lot3 = IPL_PLAYERS[order[2]];
+  check('bob opens the third lot', (await bob.emit('bid:place', { roomId, amount: lot3.basePrice })).ok);
+  check('host pauses', (await alice.emit('auction:pause', { roomId })).ok);
+  check('everyone sees the pause', await eventually(bob, () => bob.state.currentAuction?.status === 'paused', 3000, 'paused'));
+  check('a bid while paused is refused', /not accepting bids/.test((await alice.emit('bid:place', { roomId, amount: step(lot3.basePrice) })).error || ''));
+  await new Promise(r => setTimeout(r, 3500));
+  check('the clock does not run out while paused', alice.state.currentAuction?.status === 'paused');
+  check('pausing twice is refused', /Only live bidding/.test((await alice.emit('auction:pause', { roomId })).error || ''));
+  check('host resumes', (await alice.emit('auction:resume', { roomId })).ok);
+  check('the bid stands and the clock restarts in full', await eventually(bob, () => {
+    const live = bob.state.currentAuction;
+    return live?.status === 'bidding' && live.highBidderId === bob.user.id && live.timerEndsAt - Date.now() > 2000;
+  }, 3000, 'resumed'));
+  check('resuming a running lot is refused', /not paused/.test((await alice.emit('auction:resume', { roomId })).error || ''));
+  check('pause and resume are logged', ['Auction PAUSED by the host', 'Auction RESUMED by the host'].every(text => alice.messages().some(m => m.text === text)));
+
+  // Stop the server mid-auction and start it again: the room carries on
+  await alice.emit('auction:pause', { roomId });
+  alice.disconnect();
+  bob.disconnect();
+  await server.stop();
+  server = await startServer({ port: PORT, env: SERVER_ENV });
+  await alice.connect();
+  const after = await alice.join(roomId);
+  check('after a restart the auction is still running', after.ok && after.state.status === 'active' && after.state.currentAuction?.playerId === lot3.id, JSON.stringify(after.state?.currentAuction));
+  check('the paused lot, its bid and the squads survive the restart', after.state.currentAuction.status === 'paused' && after.state.currentAuction.highBidderId === bob.user.id && after.state.teams.find(t => t.teamId === 'CSK')?.squad.length === 1);
+  check('chat history survives the restart', after.messages.some(m => m.text === 'hello room'));
+  check('the host resumes after the restart', (await alice.emit('auction:resume', { roomId })).ok);
+  check('only the host ends the auction', /Only the host/.test((await bob.connect().then(() => bob.emit('auction:end', { roomId }))).error || ''));
+  check('host ends the auction', (await alice.emit('auction:end', { roomId })).ok);
+  check('the room is completed for everyone', await eventually(alice, () => alice.state.status === 'completed', 3000, 'completed'));
+  check('bids after the end are refused', /not accepting bids/.test((await bob.emit('bid:place', { roomId, amount: lot3.basePrice })).error || ''));
   alice.disconnect();
   bob.disconnect();
 
