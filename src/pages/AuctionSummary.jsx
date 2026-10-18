@@ -1,10 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Crown, Gavel, Gem, House, ListOrdered, LogIn, Plane, SearchX, Trophy, Users } from 'lucide-react';
+import { Crown, Gavel, Gem, House, ListOrdered, LogIn, Plane, SearchX, Share2, Trophy, Users } from 'lucide-react';
 import { useAuction } from '../hooks/useAuction';
 import { useAuth } from '../hooks/useAuth';
+import { useToast } from '../hooks/useToast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import SquadPoster from '../components/SquadPoster';
 import PageShell from '../components/ui/PageShell';
 import Panel from '../components/ui/Panel';
 import Tag, { LiveTag } from '../components/ui/Tag';
@@ -14,11 +17,13 @@ import PlayerPhoto from '../components/ui/PlayerPhoto';
 import RatingBadge from '../components/ui/RatingBadge';
 import Segmented from '../components/ui/Segmented';
 import Spinner from '../components/ui/Spinner';
+import Button from '../components/ui/Button';
 import EmptyState from '../components/ui/EmptyState';
 import { buttonClasses } from '../components/ui/styles';
 import { cn } from '../lib/cn';
 import { TEAMS_BY_ID, teamStrength, withPlayer } from '../lib/catalog';
 import { MODE_META, ROLES, ROLE_META, formatPrice, isOverseas } from '../lib/format';
+import { shareElementAsImage } from '../lib/shareImage';
 
 const TABS = [
   { id: 'standings', label: 'Standings', icon: ListOrdered },
@@ -69,6 +74,10 @@ function buildResults(auction, roomTeams, userId) {
     totalSpent: sold.reduce((sum, p) => sum + p.bid, 0),
   };
 }
+
+// The poster is mounted off-screen only while it's being exported; give the
+// browser a couple of frames to lay it out before it's copied
+const nextFrame = () => new Promise(resolve => requestAnimationFrame(() => resolve()));
 
 const OverseasMark = () => (
   <span className="ml-1 inline-block align-[-1px] text-signal" title="Overseas player">
@@ -235,8 +244,9 @@ const StandingsTab = ({ results }) => {
 
 // ─── Squads ───
 
-const SquadCard = ({ team, results, overseasLimit }) => {
+const SquadCard = ({ team, results, overseasLimit, sharing, onShare }) => {
   const franchise = TEAMS_BY_ID.get(team.teamId);
+  const busy = sharing === team.teamId;
   return (
     <Panel className="min-w-0" bodyClassName="p-0">
       <span className="absolute inset-x-0 top-0 h-0.5" style={{ background: franchise?.colors.primary }} aria-hidden />
@@ -246,6 +256,20 @@ const SquadCard = ({ team, results, overseasLimit }) => {
           <h3 className="text-lg font-bold uppercase leading-tight tracking-wide">{team.name}</h3>
           <ManagerLine team={team} />
         </div>
+        {team.players.length > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            icon={Share2}
+            loading={busy}
+            disabled={Boolean(sharing) && !busy}
+            onClick={() => onShare(team)}
+            aria-label={`Share ${team.name} squad as an image`}
+          >
+            <span className="hidden sm:inline">{busy ? 'Making image…' : 'Share squad'}</span>
+            <span className="sm:hidden">Share</span>
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-3 gap-3 border-b border-white/6 px-4 py-3 sm:grid-cols-5">
@@ -292,7 +316,7 @@ const SquadCard = ({ team, results, overseasLimit }) => {
   );
 };
 
-const SquadsTab = ({ results, overseasLimit }) => {
+const SquadsTab = ({ results, overseasLimit, sharing, onShare }) => {
   const mine = results.teams.find(t => t.isYou);
   const others = results.teams
     .filter(t => !t.isYou && t.players.length > 0)
@@ -308,7 +332,7 @@ const SquadsTab = ({ results, overseasLimit }) => {
   return (
     <div className="grid items-start gap-4 lg:grid-cols-2">
       {cards.map(team => (
-        <SquadCard key={team.id} team={team} results={results} overseasLimit={overseasLimit} />
+        <SquadCard key={team.id} team={team} results={results} overseasLimit={overseasLimit} sharing={sharing} onShare={onShare} />
       ))}
     </div>
   );
@@ -329,7 +353,10 @@ const AuctionSummary = () => {
   const roomId = id.toUpperCase();
   const { user } = useAuth();
   const { currentAuction, roomTeams, loading, joinAuction } = useAuction();
+  const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [sharing, setSharing] = useState(null);
+  const posterHost = useRef(null);
   // joinAuction turns loading on and off again once the server answers; remember
   // that it happened so an unknown room shows "not found" instead of a loader forever
   const [answeredFor, setAnsweredFor] = useState(null);
@@ -375,6 +402,26 @@ const AuctionSummary = () => {
   const results = buildResults(currentAuction, roomTeams, user.uid);
   const mode = MODE_META[currentAuction.auctionType];
   const status = currentAuction.status;
+  const posterTeam = sharing ? results.teams.find(t => t.teamId === sharing) : null;
+
+  const shareSquad = async (team) => {
+    if (sharing) return;
+    // Mount the poster off-screen right away so it can be measured and copied
+    flushSync(() => setSharing(team.teamId));
+    try {
+      const poster = posterHost.current?.firstElementChild;
+      if (!poster) throw new Error('missing poster');
+      await nextFrame();
+      await nextFrame();
+      const slug = team.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      await shareElementAsImage(poster, `${slug}-${roomId}.png`, `${team.name} · Auction Arena`);
+    } catch (err) {
+      if (err?.name === 'AbortError') return; // the share sheet was closed
+      toast({ message: "Couldn't make the squad image. Please try again.", tone: 'error' });
+    } finally {
+      setSharing(null);
+    }
+  };
 
   return (
     <PageShell>
@@ -431,8 +478,23 @@ const AuctionSummary = () => {
 
         <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} role="tabpanel">
           {tab === 'standings' && <StandingsTab results={results} />}
-          {tab === 'squads' && <SquadsTab results={results} overseasLimit={currentAuction.overseasLimit} />}
+          {tab === 'squads' && (
+            <SquadsTab results={results} overseasLimit={currentAuction.overseasLimit} sharing={sharing} onShare={shareSquad} />
+          )}
         </motion.div>
+      </div>
+
+      {/* Off-screen stage for the squad poster while it's being exported */}
+      <div ref={posterHost} className="pointer-events-none fixed top-0" style={{ left: -12000 }} aria-hidden>
+        {posterTeam && (
+          <SquadPoster
+            team={posterTeam}
+            managerName={posterTeam.managerName}
+            squadLimit={results.squadLimit}
+            mode={currentAuction.auctionType}
+            roomId={roomId}
+          />
+        )}
       </div>
     </PageShell>
   );
