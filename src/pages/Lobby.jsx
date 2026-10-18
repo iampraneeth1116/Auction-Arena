@@ -384,9 +384,10 @@ const Lobby = () => {
   const holders = new Map(players.filter((p) => p.team).map((p) => [p.team, p]));
   const status = room?.status;
 
-  // Everyone moves to the auction room together once the host starts
+  // Everyone moves to the auction room together once the host starts; a finished room shows its results
   useEffect(() => {
-    if (status === 'active' || status === 'completed') navigate(`/auction/${roomCode}`, { replace: true });
+    if (status === 'active') navigate(`/auction/${roomCode}`, { replace: true });
+    else if (status === 'completed') navigate(`/summary/${roomCode}`, { replace: true });
   }, [status, roomCode, navigate]);
 
   const run = async (key, action, onDone) => {

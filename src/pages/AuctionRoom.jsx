@@ -57,26 +57,6 @@ const FullScreenNotice = ({ icon: Icon, title, children }) => (
   </div>
 );
 
-// Until the results page exists, a finished auction shows each franchise's haul here
-const AuctionComplete = ({ roomTeams }) => (
-  <div className="flex min-h-dvh items-center justify-center bg-grid px-4 py-10">
-    <Panel accent="gold" className="w-full max-w-lg" bodyClassName="space-y-4 p-6 text-center">
-      <Trophy size={32} className="mx-auto text-gold" />
-      <h1 className="font-display text-4xl font-bold uppercase tracking-wide">Auction complete</h1>
-      <ul className="divide-y divide-white/6 text-left">
-        {roomTeams.map(t => (
-          <li key={t.teamId} className="flex items-center gap-3 py-2">
-            <TeamCrest teamId={t.teamId} size="sm" />
-            <span className="flex-1 font-display font-semibold uppercase">{t.teamName}</span>
-            <span className="tabular text-sm text-mist">{t.squad.length} players · {formatPrice(t.budgetRemaining)} left</span>
-          </li>
-        ))}
-      </ul>
-      <Link to="/" className={buttonClasses({ variant: 'outline' })}><Home size={16} /> Home</Link>
-    </Panel>
-  </div>
-);
-
 const AuctionRoom = () => {
   const { id: rawId } = useParams();
   const id = rawId.toUpperCase();
@@ -236,7 +216,7 @@ const AuctionRoom = () => {
   }
   if (loading || !currentAuction) return <Spinner className="min-h-dvh" />;
   if (currentAuction.status === 'waiting') return <Navigate to={`/lobby/${id}`} replace />;
-  if (currentAuction.status === 'completed') return <AuctionComplete roomTeams={roomTeams} />;
+  if (currentAuction.status === 'completed') return <Navigate to={`/summary/${id}`} replace />;
 
   // ─── The stage ───
   const stage = (

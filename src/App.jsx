@@ -11,6 +11,7 @@ import LandingPage from './pages/LandingPage';
 // Everything except the landing page loads when first visited
 const Lobby = lazy(() => import('./pages/Lobby'));
 const AuctionRoom = lazy(() => import('./pages/AuctionRoom'));
+const AuctionSummary = lazy(() => import('./pages/AuctionSummary'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -32,6 +33,7 @@ function App() {
                   <Route path="/" element={<LandingPage />} />
                   <Route path="/lobby/:id" element={<Lobby />} />
                   <Route path="/auction/:id" element={<AuctionRoom />} />
+                  <Route path="/summary/:id" element={<AuctionSummary />} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>
