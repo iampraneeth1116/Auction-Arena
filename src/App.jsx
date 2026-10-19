@@ -12,6 +12,7 @@ import LandingPage from './pages/LandingPage';
 const Lobby = lazy(() => import('./pages/Lobby'));
 const AuctionRoom = lazy(() => import('./pages/AuctionRoom'));
 const AuctionSummary = lazy(() => import('./pages/AuctionSummary'));
+const FantasyAdmin = lazy(() => import('./pages/FantasyAdmin'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -34,6 +35,7 @@ function App() {
                   <Route path="/lobby/:id" element={<Lobby />} />
                   <Route path="/auction/:id" element={<AuctionRoom />} />
                   <Route path="/summary/:id" element={<AuctionSummary />} />
+                  <Route path="/admin/fantasy" element={<FantasyAdmin />} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>

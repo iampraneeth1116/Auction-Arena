@@ -32,6 +32,7 @@ const toClientUser = (user) => user && {
   email: user.email,
   photoURL: user.avatarUrl,
   isGuest: user.isGuest,
+  isAdmin: user.isAdmin,
 };
 
 export const AuthProvider = ({ children }) => {

@@ -4,11 +4,13 @@
 import { TestClient, createChecker, startServer } from './helpers.mjs';
 import { prisma } from '../server/db.js';
 import { IPL_PLAYERS } from '../src/data/players.js';
+import { signAccessToken } from '../server/auth/tokens.js';
 import { calculatePoints, collectMatchPlayers, findPlayer, saveMatch } from '../scripts/lib/fantasyScoring.js';
 
 const PORT = 3099;
+const ADMIN_EMAIL = 'admin@arena.test';
 // Keep Google sign-in unconfigured for this run, whatever .env contains
-const SERVER_ENV = { GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '' };
+const SERVER_ENV = { GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '', ADMIN_EMAIL };
 
 const { check, failedCount, printSummary } = createChecker();
 const step = (crores) => Math.round(crores * 100 + (crores < 5 ? 20 : 25)) / 100;
@@ -239,6 +241,31 @@ try {
   check('fantasy player stats load', (await host.req('GET', '/api/fantasy/player-stats')).status === 200);
   check('admin endpoints are forbidden for everyone else', (await host.req('POST', `/api/admin/player-stats/${fullIds[0]}/match`, { points: 10 })).status === 403);
   check('me says a guest is not an admin', (await host.req('GET', '/api/auth/me')).data.user.isAdmin === false);
+
+  // ─── Fantasy admin ───
+  // Admins have to come through Google, so the test makes that account directly and signs its token
+  const adminUser = await prisma.user.upsert({
+    where: { googleId: 'test-google-admin' },
+    create: { name: 'Test Admin', email: ADMIN_EMAIL, googleId: 'test-google-admin' },
+    update: { email: ADMIN_EMAIL },
+  });
+  const admin = new TestClient(base);
+  admin.cookies.set('access_token', signAccessToken(adminUser));
+  check('me says the Google admin is an admin', (await admin.req('GET', '/api/auth/me')).data?.user?.isAdmin === true);
+  const tuned = IPL_PLAYERS.at(-1);
+  const original = await prisma.playerStat.findUnique({ where: { playerId: tuned.id } });
+  const before = original ?? { totalPoints: 0, matches: 0 };
+  const added = await admin.req('POST', `/api/admin/player-stats/${tuned.id}/match`, { points: 40 });
+  check('the admin adds one match of points', added.status === 200 && added.data.stat.totalPoints === before.totalPoints + 40 && added.data.stat.matches === before.matches + 1, JSON.stringify(added.data));
+  const corrected = await admin.req('PUT', `/api/admin/player-stats/${tuned.id}`, { average: 50 });
+  check('a corrected average keeps the match count', corrected.data?.stat?.matches === before.matches + 1 && corrected.data.stat.totalPoints === 50 * (before.matches + 1), JSON.stringify(corrected.data));
+  const recounted = await admin.req('PUT', `/api/admin/player-stats/${tuned.id}`, { matches: 4 });
+  check('a corrected match count keeps the average', recounted.data?.stat?.matches === 4 && recounted.data.stat.totalPoints === 200, JSON.stringify(recounted.data));
+  check('match points outside the allowed range are refused', (await admin.req('POST', `/api/admin/player-stats/${tuned.id}/match`, { points: 5000 })).status === 400);
+  check('an unknown player is a 404', (await admin.req('POST', '/api/admin/player-stats/nobody/match', { points: 10 })).status === 404);
+  // Leave the dev database's stats as they were
+  if (original) await prisma.playerStat.update({ where: { playerId: tuned.id }, data: { totalPoints: original.totalPoints, matches: original.matches } });
+  else await prisma.playerStat.delete({ where: { playerId: tuned.id } });
 
   // ─── Fantasy scoring (the scripts' shared library) ───
   // 52 off 30 with 4 fours and 2 sixes, caught: 52 + 16 + 12 + 8 (fifty) + 6 (SR 173) + 4 (in the XI)

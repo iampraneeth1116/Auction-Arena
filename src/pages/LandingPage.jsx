@@ -20,6 +20,7 @@ import { auctionPoolSize, ratingOf } from '../lib/catalog';
 import { BID_TIMER_PRESETS, MODE_META, overseasLimitLabel } from '../lib/format';
 import Toggle from '../components/ui/Toggle';
 import OverseasLimitPicker from '../components/OverseasLimitPicker';
+import Footer from '../components/Footer';
 import { cn } from '../lib/cn';
 import { TEAMS } from '../data/teams';
 import { IPL_PLAYERS } from '../data/players';
@@ -299,7 +300,7 @@ const LandingPage = () => {
         )}
       </section>
 
-      <section className="pb-16">
+      <section>
         <h2 className="mb-3 font-display text-sm font-semibold uppercase tracking-[0.16em] text-haze">Top rated</h2>
         <ul className="grid gap-2 sm:grid-cols-5">
           {TOP_RATED.map(player => (
@@ -311,6 +312,8 @@ const LandingPage = () => {
           ))}
         </ul>
       </section>
+
+      <Footer />
     </PageShell>
   );
 };
