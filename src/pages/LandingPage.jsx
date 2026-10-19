@@ -61,55 +61,61 @@ const LandingPage = () => {
 
 // ─── Signed out: what this is, a sample lot, and how to get in ───
 
-const SignedOut = () => (
-  <PageShell
-    right={
-      <Link to="/guide" className={buttonClasses({ variant: 'ghost', size: 'sm' })}>
-        <BookOpen size={15} /> How to play
-      </Link>
-    }
-  >
-    <AuctionActivityFeed className="mt-4" />
+// The sign-in panel's heading follows the step it's on
+const SIGN_IN_TITLES = { choose: 'Start playing', email: 'Sign in with email', guest: 'Play as a guest' };
 
-    <section className="grid items-center gap-10 pb-12 pt-8 sm:pt-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:gap-14 lg:pb-16">
-      <div className="min-w-0">
-        <p className="flex items-center gap-2 font-display text-xs font-semibold uppercase tracking-[0.18em] text-signal">
-          <span className="h-3.5 w-1 -skew-x-12 bg-signal" aria-hidden />
-          Live IPL auction game
-        </p>
-        <h1 className="mt-3 font-display text-[2.5rem] font-bold uppercase leading-[0.95] tracking-wide text-snow sm:text-6xl">
-          Run the IPL auction
-          <span className="block text-signal">with your friends</span>
-        </h1>
-        <p className="mt-4 max-w-xl text-base leading-relaxed text-mist sm:text-lg">
-          Friends claim IPL franchises and bid live on {PLAYER_COUNT} real players, with bots filling any empty teams.
-          Afterwards, AI power rankings grade every squad and your team plays on in a fantasy league.
-        </p>
-        <dl className="mt-5 grid max-w-md grid-cols-3 gap-2 sm:flex sm:max-w-none sm:flex-wrap">
-          {[
-            [PLAYER_COUNT, 'Players'],
-            [TEAMS.length, 'Franchises'],
-            [MODES.length, 'Formats'],
-          ].map(([value, label]) => (
-            <div key={label} className="flex flex-col rounded-md border border-white/8 bg-ink-900/60 px-3 py-1.5 sm:flex-row sm:items-baseline sm:gap-1.5">
-              <dt className={LABEL}>{label}</dt>
-              <dd className="order-first font-display text-lg font-bold tabular text-snow">{value}</dd>
-            </div>
-          ))}
-        </dl>
+const SignedOut = () => {
+  const [signInView, setSignInView] = useState('choose');
+  return (
+    <PageShell
+      right={
+        <Link to="/guide" className={buttonClasses({ variant: 'ghost', size: 'sm' })}>
+          <BookOpen size={15} /> How to play
+        </Link>
+      }
+    >
+      <AuctionActivityFeed className="mt-4" />
 
-        <Panel label="Start playing" accent="signal" className="mt-8 max-w-lg" bodyClassName="p-4 sm:p-5">
-          <SignInOptions />
-        </Panel>
-      </div>
+      <section className="grid items-center gap-10 pb-12 pt-8 sm:pt-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:gap-14 lg:pb-16">
+        <div className="min-w-0">
+          <p className="flex items-center gap-2 font-display text-xs font-semibold uppercase tracking-[0.18em] text-signal">
+            <span className="h-3.5 w-1 -skew-x-12 bg-signal" aria-hidden />
+            Live IPL auction game
+          </p>
+          <h1 className="mt-3 font-display text-[2.5rem] font-bold uppercase leading-[0.95] tracking-wide text-snow sm:text-6xl">
+            Run the IPL auction
+            <span className="block text-signal">with your friends</span>
+          </h1>
+          <p className="mt-4 max-w-xl text-base leading-relaxed text-mist sm:text-lg">
+            Friends claim IPL franchises and bid live on {PLAYER_COUNT} real players, with bots filling any empty teams.
+            Afterwards, AI power rankings grade every squad and your team plays on in a fantasy league.
+          </p>
+          <dl className="mt-5 grid max-w-md grid-cols-3 gap-2 sm:flex sm:max-w-none sm:flex-wrap">
+            {[
+              [PLAYER_COUNT, 'Players'],
+              [TEAMS.length, 'Franchises'],
+              [MODES.length, 'Formats'],
+            ].map(([value, label]) => (
+              <div key={label} className="flex flex-col rounded-md border border-white/8 bg-ink-900/60 px-3 py-1.5 sm:flex-row sm:items-baseline sm:gap-1.5">
+                <dt className={LABEL}>{label}</dt>
+                <dd className="order-first font-display text-lg font-bold tabular text-snow">{value}</dd>
+              </div>
+            ))}
+          </dl>
 
-      <LotCard />
-    </section>
+          <Panel label={SIGN_IN_TITLES[signInView]} accent="signal" className="mt-8 max-w-lg" bodyClassName="p-4 sm:p-5">
+            <SignInOptions onViewChange={setSignInView} />
+          </Panel>
+        </div>
 
-    <HowItWorks />
-    <Footer />
-  </PageShell>
-);
+        <LotCard />
+      </section>
+
+      <HowItWorks />
+      <Footer />
+    </PageShell>
+  );
+};
 
 // A sample lot that plays on a loop, drawn like the live auction graphic
 const BIDS_PER_LOT = 5;
@@ -495,6 +501,11 @@ const HostTab = () => {
             <p className="font-display text-xl font-bold uppercase leading-tight tracking-wide text-snow">{team.name}</p>
             <p className="text-sm text-haze">“{team.motto}”</p>
           </div>
+        </div>
+        <div className="rounded-md border border-white/6 bg-ink-900/60 px-3 py-2">
+          <div className={LABEL}>Format</div>
+          <p className="font-display text-base font-bold uppercase tracking-wide text-snow">{MODE_META[mode].label}</p>
+          <p className="text-xs text-haze">{MODE_META[mode].blurb}</p>
         </div>
         <div>
           <div className="mb-1.5 flex items-baseline justify-between">

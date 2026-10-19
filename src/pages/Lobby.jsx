@@ -293,7 +293,8 @@ const HostControls = ({
           <h3 className={labelClasses}>Bots</h3>
         </div>
         <p className="text-sm leading-relaxed text-mist">
-          Bots run franchises nobody picked and bid on their own under the same purse and squad rules.
+          Bots run franchises nobody picked and bid on their own under the same purse and squad rules. Anyone can take
+          over a bot's franchise before the start.
         </p>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" icon={Bot} loading={busy === 'bots:fill'} disabled={openCount === 0 || Boolean(busy)} onClick={onFillBots}>
@@ -516,8 +517,9 @@ const Lobby = () => {
     return () => { cancelled = true; };
   }, [sessionKey, watching, roomCode, joinRoom, toast]);
 
-  // Then follow the room live (spectators straight away). If it never arrives, stop waiting after a while.
-  const canSubscribe = Boolean(sessionKey) && (watching || joined === 'ok');
+  // Then follow the room live (spectators straight away). A join that failed still follows it, so
+  // an old link to a finished auction moves on to its results. If it never arrives, stop waiting.
+  const canSubscribe = Boolean(sessionKey) && (watching || joined === 'ok' || joined === 'failed');
   useEffect(() => {
     if (!canSubscribe) return undefined;
     const unsubscribe = joinAuction(roomCode);
@@ -672,7 +674,7 @@ const Lobby = () => {
     );
   }
 
-  if (!room && (joined === 'failed' || stalledKey === sessionKey)) {
+  if (!room && stalledKey === sessionKey) {
     return (
       <StateScreen
         icon={RotateCw}
@@ -742,7 +744,7 @@ const Lobby = () => {
           <Panel
             id="franchise-board"
             label="Franchises"
-            actions={<span className="tabular text-xs text-haze">{TEAM_COUNT - managedCount} open</span>}
+            actions={<span className="tabular text-xs text-haze">{TEAM_COUNT - managedCount} open · {botCount === 1 ? '1 bot' : `${botCount} bots`}</span>}
             className="order-1 scroll-mt-20"
             bodyClassName="p-3 sm:p-4"
           >

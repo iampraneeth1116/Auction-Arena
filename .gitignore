@@ -1,9 +1,33 @@
 node_modules
 dist
+dist-ssr
+*.local
+tmp/
+
+# Secrets: only the example is committed
 .env
 .env.*
 !.env.example
+
+# Logs
+logs
 *.log
-.DS_Store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
 # Prisma client, made by `npm run db:generate`
 server/generated
+
+# Editor and OS files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

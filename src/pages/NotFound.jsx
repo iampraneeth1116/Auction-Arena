@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
-import { House } from 'lucide-react';
+import { BookOpen, House } from 'lucide-react';
 import PageShell from '../components/ui/PageShell';
 import { buttonClasses } from '../components/ui/styles';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -94,6 +94,10 @@ const NotFound = () => {
             <Link to="/" className={buttonClasses({ variant: 'primary', size: 'lg' })}>
               <House size={18} strokeWidth={2.5} />
               Home
+            </Link>
+            <Link to="/guide" className={buttonClasses({ variant: 'outline', size: 'lg' })}>
+              <BookOpen size={18} strokeWidth={2.5} />
+              Game guide
             </Link>
           </div>
         </div>

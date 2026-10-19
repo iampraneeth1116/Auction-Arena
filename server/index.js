@@ -50,6 +50,8 @@ if (fs.existsSync(distDir)) {
 // eslint-disable-next-line no-unused-vars -- Express only treats 4-argument middleware as an error handler
 app.use((err, req, res, next) => {
   if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Invalid JSON' });
+  // A unique index caught a duplicate the route didn't check for
+  if (err.code === 'P2002') return res.status(409).json({ error: 'That already exists' });
   const status = err.status || 500;
   // Deliberate errors explain themselves; anything else could leak internals
   const isExpected = err.expose === true || status < 500;

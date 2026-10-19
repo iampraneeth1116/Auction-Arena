@@ -12,4 +12,5 @@ export const AuthContext = createContext({
   logout: async () => {},
 });
 
-export const useAuth = () => useContext(AuthContext);
+// The fallback keeps a component rendered outside the provider from crashing
+export const useAuth = () => useContext(AuthContext) || {};

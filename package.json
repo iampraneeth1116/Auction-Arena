@@ -19,7 +19,8 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "fantasy:update": "node scripts/autoUpdateFantasy.js",
-    "fantasy:backfill": "node scripts/backfillIPL2026.js"
+    "fantasy:backfill": "node scripts/backfillIPL2026.js",
+    "fantasy:upload": "node scripts/uploadConsolidatedPoints.js"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",

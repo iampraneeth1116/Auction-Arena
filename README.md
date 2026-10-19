@@ -135,6 +135,7 @@ Open http://localhost:5173.
 | `npm run db:deploy` | Apply migrations to the database in `DATABASE_URL` |
 | `npm run fantasy:update` | Score IPL matches finished since the last run (daily job) |
 | `npm run fantasy:backfill` | Score every finished IPL 2026 match not yet processed |
+| `npm run fantasy:upload` | Seed player totals from the table in `scripts/uploadConsolidatedPoints.js` |
 | `npm test` | The three end-to-end suites below |
 
 ## 🧪 Testing
@@ -151,7 +152,7 @@ GitHub Actions runs lint, the tests (against a throwaway Postgres) and a product
 
 ## 🌐 Deployment
 
-The Node server serves the built React app, the API and Socket.IO from one domain, so the auth cookies are same-site. Use a host that keeps a long-running process with WebSockets, such as **Render** or **Railway**.
+The Node server serves the built React app, the API and Socket.IO from one domain, so the auth cookies are same-site. Use a host that keeps a long-running process with WebSockets, such as **Render** or **Railway**. Vercel's serverless functions can't hold Socket.IO connections.
 
 **Render (Blueprint):** the repo includes `render.yaml`. In Render choose **New → Blueprint**, pick this repo, and fill in the secrets it asks for. Or set up a **Web Service** by hand:
 
