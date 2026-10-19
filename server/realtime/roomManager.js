@@ -120,6 +120,9 @@ function exclusive(rt, task) {
 
 // ─── What clients see ───
 
+// Signed-in people with the room open who aren't members of it: they're watching
+const countSpectators = (rt) => [...rt.presence.keys()].filter(userId => !rt.members.has(userId)).length;
+
 export function getSnapshot(rt) {
   const { room } = rt;
   const members = [...rt.members.values()];
@@ -139,6 +142,7 @@ export function getSnapshot(rt) {
     quickPool: room.quickPool,
     rotateUnsold: room.rotateUnsold,
     round: room.round,
+    spectatorCount: countSpectators(rt),
     players: members.map(m => ({
       id: m.userId,
       name: m.displayName,

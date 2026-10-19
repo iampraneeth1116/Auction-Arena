@@ -241,7 +241,7 @@ const TextChat = ({ roomId, canChat = true, className }) => {
                 <MessageSquare size={18} />
               </span>
               <p className="font-display text-sm font-semibold uppercase tracking-wider text-mist">No messages yet</p>
-              <p className="text-xs text-haze">{canChat ? 'Say hello to the room.' : 'Messages from the room show up here.'}</p>
+              <p className="text-xs text-haze">{canChat ? 'Say hello to the room.' : 'Messages from managers show up here.'}</p>
             </div>
           ) : (
             <ol className="flex flex-col">
@@ -348,7 +348,7 @@ const TextChat = ({ roomId, canChat = true, className }) => {
       ) : (
         <p className="flex items-center gap-2 border-t border-white/6 bg-ink-900/70 px-3 py-3 text-xs text-haze">
           <Eye size={14} className="shrink-0 text-signal" aria-hidden />
-          Join the room to chat.
+          Spectators can read the chat. Join as a manager to talk.
         </p>
       )}
     </div>

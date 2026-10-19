@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Bot, BotOff, Check, Copy, Crown, Gavel, Hourglass, House, Loader2, MessageSquare, Plane, RotateCw, SearchX, ShieldX, Timer, TrendingUp, UserMinus, UserPlus, UserRound, Users, Wallet } from 'lucide-react';
+import { Bot, BotOff, Check, Copy, Crown, Eye, Gavel, Hourglass, House, Loader2, MessageSquare, Plane, RotateCw, SearchX, ShieldX, Timer, TrendingUp, UserMinus, UserPlus, UserRound, Users, Wallet } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useAuction } from '../hooks/useAuction';
 import { useToast } from '../hooks/useToast';
@@ -22,6 +22,7 @@ import Tag from '../components/ui/Tag';
 import TeamCrest from '../components/ui/TeamCrest';
 import { buttonClasses } from '../components/ui/styles';
 import TextChat from '../components/TextChat';
+import SignInOptions from '../components/SignInOptions';
 
 const TEAM_COUNT = TEAMS.length;
 // Give up waiting for the room after this long and offer a retry
@@ -61,6 +62,32 @@ const StateScreen = ({ icon: Icon, tone = 'signal', title, children, actions }) 
   </PageShell>
 );
 
+// ─── Signed out: the invite card ───
+
+const SignInGate = ({ roomCode, watching }) => (
+  <PageShell showUser={false} className="flex min-h-[calc(100dvh-3.5rem)] flex-col items-center justify-center gap-6 py-10">
+    <Panel as={motion.section} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} accent="signal" className="w-full max-w-md" bodyClassName="p-6 sm:p-8">
+      <span className="clip-slant-r inline-block bg-signal py-0.5 pl-2.5 pr-6 font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-950">
+        {watching ? 'Watch invite' : "You're invited"}
+      </span>
+      <h1 className="mt-4 font-display text-3xl font-bold uppercase tracking-wide text-snow">
+        Room <span className="tabular tracking-[0.12em] text-signal">{roomCode}</span>
+      </h1>
+      <p className="mt-2 text-sm leading-relaxed text-mist">
+        {watching
+          ? 'Sign in to follow every bid live from the stands.'
+          : 'Sign in to pick a franchise and start bidding.'}
+      </p>
+      <div className="mt-6">
+        <SignInOptions />
+      </div>
+    </Panel>
+    <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-haze transition-colors hover:text-snow">
+      <House size={14} /> Back to home
+    </Link>
+  </PageShell>
+);
+
 // ─── Lobby sections ───
 
 const RoomHeader = ({ room, roomCode, isHost, hostName, managedCount, onlineCount, copied, onCopy }) => {
@@ -70,9 +97,12 @@ const RoomHeader = ({ room, roomCode, isHost, hostName, managedCount, onlineCoun
       <div className="pointer-events-none absolute inset-0 bg-stripes" aria-hidden />
       <div className="relative flex flex-col gap-6 p-4 sm:p-6 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
-          <span className="clip-slant-r bg-signal py-0.5 pl-2.5 pr-6 font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-950">
-            Lobby
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="clip-slant-r bg-signal py-0.5 pl-2.5 pr-6 font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-950">
+              Lobby
+            </span>
+            <Tag icon={Eye}>{room.spectatorCount ?? 0} watching</Tag>
+          </div>
           <p className={cn(labelClasses, 'mt-4')}>Room code</p>
           <h1 className="tabular font-display text-5xl font-bold leading-none tracking-[0.14em] text-snow sm:text-7xl">{roomCode}</h1>
           <div className="mt-4">
@@ -327,7 +357,7 @@ const HostControls = ({
   );
 };
 
-const MembersPanel = ({ players, uid, isHost, onKick }) => {
+const MembersPanel = ({ players, uid, isHost, spectatorCount, onKick }) => {
   const people = players.filter((p) => !p.isBot).length;
   const bots = players.length - people;
   // Host first, people before bots, otherwise in join order
@@ -383,6 +413,11 @@ const MembersPanel = ({ players, uid, isHost, onKick }) => {
           );
         })}
       </ul>
+      {spectatorCount > 0 && (
+        <p className="flex items-center gap-2 border-t border-white/6 px-4 py-2.5 text-xs text-haze">
+          <Eye size={13} aria-hidden /> {spectatorCount} watching without a franchise
+        </p>
+      )}
     </Panel>
   );
 };
@@ -418,6 +453,9 @@ const RulesPanel = ({ room }) => {
 const Lobby = () => {
   const { id = '' } = useParams();
   const roomCode = id.trim().toUpperCase();
+  // ?watch=1: follow the room without becoming a member of it
+  const [searchParams] = useSearchParams();
+  const watching = searchParams.get('watch') === '1';
   const { toast } = useToast();
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -440,9 +478,9 @@ const Lobby = () => {
   const joined = join?.key === sessionKey ? join.status : null;
   const room = currentAuction?.id === roomCode ? currentAuction : null;
 
-  // Become a member of the room (a no-op if already in it)
+  // Become a member of the room (a no-op if already in it); spectators skip this
   useEffect(() => {
-    if (!sessionKey) return undefined;
+    if (!sessionKey || watching) return undefined;
     let cancelled = false;
     joinRoom(roomCode).then(
       () => { if (!cancelled) setJoin({ key: sessionKey, status: 'ok' }); },
@@ -457,10 +495,10 @@ const Lobby = () => {
       },
     );
     return () => { cancelled = true; };
-  }, [sessionKey, roomCode, joinRoom, toast]);
+  }, [sessionKey, watching, roomCode, joinRoom, toast]);
 
-  // Then follow the room live. If it never arrives, stop waiting after a while.
-  const canSubscribe = joined === 'ok';
+  // Then follow the room live (spectators straight away). If it never arrives, stop waiting after a while.
+  const canSubscribe = Boolean(sessionKey) && (watching || joined === 'ok');
   useEffect(() => {
     if (!canSubscribe) return undefined;
     const unsubscribe = joinAuction(roomCode);
@@ -474,14 +512,16 @@ const Lobby = () => {
   const players = room?.players ?? [];
   const me = players.find((p) => p.id === uid) ?? null;
   const myTeamId = me?.team || '';
+  const spectatorView = watching && !myTeamId;
   const holders = new Map(players.filter((p) => p.team).map((p) => [p.team, p]));
   const status = room?.status;
 
-  // Everyone moves to the auction room together once the host starts; a finished room shows its results
+  // Everyone moves to the auction room together once the host starts (spectators keep watching there);
+  // a finished room shows its results
   useEffect(() => {
-    if (status === 'active') navigate(`/auction/${roomCode}`, { replace: true });
+    if (status === 'active') navigate(`/auction/${roomCode}${spectatorView ? '?watch=1' : ''}`, { replace: true });
     else if (status === 'completed') navigate(`/summary/${roomCode}`, { replace: true });
-  }, [status, roomCode, navigate]);
+  }, [status, roomCode, spectatorView, navigate]);
 
   const run = async (key, action, onDone) => {
     setBusy(key);
@@ -496,12 +536,28 @@ const Lobby = () => {
     }
   };
 
+  const leaveWatchMode = () => navigate(`/lobby/${roomCode}`, { replace: true });
+  const justWatch = () => navigate(`/lobby/${roomCode}?watch=1`, { replace: true });
+
+  const joinAsManager = () =>
+    run('join', () => joinRoom(roomCode), () => {
+      setJoin({ key: sessionKey, status: 'ok' });
+      leaveWatchMode();
+    });
+
   const claimTeam = (teamId) => {
     const team = TEAMS_BY_ID.get(teamId);
     const fromBot = Boolean(holders.get(teamId)?.isBot);
-    return run(`team:${teamId}`, () => selectTeam(roomCode, teamId), () => {
-      toast({ message: fromBot ? `You took over ${team.name} from its bot` : `You're managing ${team.name}`, tone: 'success' });
-    });
+    return run(
+      `team:${teamId}`,
+      // A spectator joins and claims in one step
+      () => (me ? selectTeam(roomCode, teamId) : joinRoom(roomCode, { teamId })),
+      () => {
+        if (!me) setJoin({ key: sessionKey, status: 'ok' });
+        if (watching) leaveWatchMode();
+        toast({ message: fromBot ? `You took over ${team.name} from its bot` : `You're managing ${team.name}`, tone: 'success' });
+      },
+    );
   };
 
   const addBot = (teamId) => run(`bot:${teamId}`, () => addBots(roomCode, teamId));
@@ -558,13 +614,7 @@ const Lobby = () => {
 
   // ─── Gates ───
 
-  if (!user) {
-    return (
-      <StateScreen icon={UserRound} title={`Room ${roomCode}`} actions={<HomeLink />}>
-        Sign in on the home page, then open this link again to pick a franchise.
-      </StateScreen>
-    );
-  }
+  if (!user) return <SignInGate roomCode={roomCode} watching={watching} />;
 
   if (joined === 'kicked' || roomError?.code === 'kicked' || Boolean(room?.bannedPlayers?.includes(uid))) {
     return (
@@ -609,6 +659,7 @@ const Lobby = () => {
   const onlineCount = players.filter((p) => !p.isBot && p.isOnline).length;
   const botCount = players.filter((p) => p.isBot).length;
   const myTeam = TEAMS_BY_ID.get(myTeamId) ?? null;
+  const allTakenByPeople = TEAMS.every((t) => holders.has(t.id) && !holders.get(t.id).isBot);
   const canStart = managedCount >= 2;
 
   const requestStart = () => {
@@ -619,6 +670,18 @@ const Lobby = () => {
 
   return (
     <PageShell wide className="pb-12 pt-4 sm:pt-6">
+      {spectatorView && (
+        <div className="mb-4 flex flex-col gap-3 rounded-lg border border-signal/30 bg-signal/[0.07] p-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+          <div className="flex items-start gap-3 sm:items-center">
+            <Tag tone="signal" icon={Eye} className="mt-0.5 sm:mt-0">Watching</Tag>
+            <p className="text-sm text-mist">You're watching this room live. Join as a manager to pick a franchise, bid and chat.</p>
+          </div>
+          <Button variant="primary" size="sm" icon={UserPlus} loading={busy === 'join'} disabled={Boolean(busy)} onClick={joinAsManager} className="shrink-0">
+            Join as a manager
+          </Button>
+        </div>
+      )}
+
       <RoomHeader
         room={room}
         roomCode={roomCode}
@@ -637,10 +700,19 @@ const Lobby = () => {
             actions={<span className="tabular text-xs text-haze">{TEAM_COUNT - managedCount} open</span>}
             bodyClassName="p-3 sm:p-4"
           >
-            {!myTeamId && (
-              <p className="mb-3 rounded-md border border-signal/25 bg-signal/[0.06] px-3 py-2.5 text-sm text-mist">
-                Pick an open franchise{botCount > 0 ? ' or take one over from a bot' : ''}. You can switch until the auction starts.
-              </p>
+            {!myTeamId && !spectatorView && (
+              <div className="mb-3 flex flex-col gap-2 rounded-md border border-signal/25 bg-signal/[0.06] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-mist">
+                  {allTakenByPeople
+                    ? 'Every franchise has a manager. You can stay and chat, or just watch the auction.'
+                    : `Pick an open franchise${botCount > 0 ? ' or take one over from a bot' : ''}. You can switch until the auction starts.`}
+                </p>
+                {allTakenByPeople && (
+                  <Button variant="outline" size="sm" icon={Eye} onClick={justWatch} className="shrink-0">
+                    Just watch
+                  </Button>
+                )}
+              </div>
             )}
             <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {TEAMS.map((team) => (
@@ -681,7 +753,7 @@ const Lobby = () => {
               onOverseas={setOverseas}
             />
           )}
-          <MembersPanel players={players} uid={uid} isHost={isHost} onKick={setKickTarget} />
+          <MembersPanel players={players} uid={uid} isHost={isHost} spectatorCount={room.spectatorCount ?? 0} onKick={setKickTarget} />
           <Panel label="Room chat" actions={<MessageSquare size={14} className="text-haze" aria-hidden />} bodyClassName="h-[420px]">
             <TextChat roomId={roomCode} canChat={Boolean(me)} />
           </Panel>

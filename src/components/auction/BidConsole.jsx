@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Gavel, Trophy } from 'lucide-react';
+import { Eye, Gavel, Trophy, UserPlus } from 'lucide-react';
 import Button from '../ui/Button';
 import { cn } from '../../lib/cn';
 import { bidButtonLabel, formatPrice, overseasUsage } from '../../lib/format';
@@ -13,7 +13,22 @@ const Readout = ({ label, value, warn }) => (
 );
 
 // Your side of the desk: the bid button and the numbers that decide whether to press it
-const BidConsole = ({ team, squadLimit, overseasLimit, overseasCount, maxBid, nextAmount, state, onBid, busy }) => {
+const BidConsole = ({ watching, onJoin, team, squadLimit, overseasLimit, overseasCount, maxBid, nextAmount, state, onBid, busy }) => {
+  if (watching) {
+    return (
+      <div className="flex flex-col items-center justify-between gap-3 rounded-lg border border-dashed border-ink-500 bg-ink-900/60 px-4 py-4 sm:flex-row">
+        <div className="flex min-w-0 items-center gap-3">
+          <Eye size={20} className="shrink-0 text-signal" aria-hidden />
+          <div className="min-w-0">
+            <div className="font-display text-lg font-bold uppercase">You're watching</div>
+            <p className="text-sm text-haze">Spectators see every bid live but can't bid or chat.</p>
+          </div>
+        </div>
+        {onJoin && <Button variant="outline" icon={UserPlus} onClick={onJoin} className="shrink-0 whitespace-nowrap">Join as a manager</Button>}
+      </div>
+    );
+  }
+
   // Bidding past this leaves too little to fill the rest of the squad
   const overMax = state === 'open' && nextAmount > maxBid;
 

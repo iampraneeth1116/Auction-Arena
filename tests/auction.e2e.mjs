@@ -91,7 +91,9 @@ try {
   const watch = await watcher.join(roomId);
   check('history arrives on join, oldest first', watch.ok && watch.messages.map(m => m.text).join('|') === 'hello room|https://media.giphy.com/media/abc/giphy.gif');
   check('someone who has not joined cannot chat', /Join the room first/.test((await watcher.emit('chat:send', { roomId, text: 'hi', type: 'text' })).error || ''));
+  check('someone following the room without joining counts as watching', await eventually(alice, () => alice.state.spectatorCount === 1, 3000, 'watching'));
   watcher.disconnect();
+  check('they stop counting when they leave', await eventually(alice, () => alice.state.spectatorCount === 0, 3000, 'left'));
 
   // ─── Host controls ───
   check('only the host changes the bid timer', /Only the host/.test((await bob.emit('settings:update', { roomId, bidTimer: 5 })).error || ''));
@@ -125,6 +127,17 @@ try {
   check('starting twice is refused', /already started/.test((await alice.emit('auction:start', { roomId })).error || ''));
 
   const first = IPL_PLAYERS[order[0]];
+
+  // Arriving after the start: watch, or claim a franchise nobody holds
+  const latecomer = await signedIn('Dev');
+  await latecomer.connect();
+  await latecomer.join(roomId);
+  check('a latecomer following the live auction counts as watching', await eventually(alice, () => alice.state.spectatorCount === 1, 3000, 'late watcher'));
+  check('a spectator cannot bid', /Join the room first/.test((await latecomer.emit('bid:place', { roomId, amount: first.basePrice })).error || ''));
+  check('a latecomer cannot claim a franchise someone holds', (await latecomer.req('POST', `/api/rooms/${roomId}/join`, { teamId: 'CSK' })).status === 409);
+  check('a latecomer claims a free franchise mid-auction', (await latecomer.req('POST', `/api/rooms/${roomId}/join`, { teamId: 'RR' })).status === 200);
+  check('they join the board with a full purse and stop counting as watching', await eventually(alice, () => alice.state.teams.some(t => t.teamId === 'RR' && t.userId === latecomer.user.id && t.budgetRemaining === 120) && alice.state.spectatorCount === 0, 3000, 'late claim'));
+  latecomer.disconnect();
   check('a bid at a moved price is refused', /price has moved/.test((await bob.emit('bid:place', { roomId, amount: first.basePrice + 1 })).error || ''));
   check('the opening bid is the base price', (await bob.emit('bid:place', { roomId, amount: first.basePrice })).currentBid === first.basePrice);
   check('the leader cannot outbid themselves', /already the highest/.test((await bob.emit('bid:place', { roomId, amount: step(first.basePrice) })).error || ''));

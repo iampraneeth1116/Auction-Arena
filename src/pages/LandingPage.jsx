@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Check, Gavel, LogIn, Mail, UserRound } from 'lucide-react';
+import { Check, Gavel, LogIn } from 'lucide-react';
 import PageShell from '../components/ui/PageShell';
 import Panel from '../components/ui/Panel';
 import Button from '../components/ui/Button';
@@ -10,8 +10,7 @@ import Segmented from '../components/ui/Segmented';
 import TeamCrest from '../components/ui/TeamCrest';
 import PlayerPhoto from '../components/ui/PlayerPhoto';
 import RatingBadge from '../components/ui/RatingBadge';
-import EmailAuthForm from '../components/EmailAuthForm';
-import GoogleMark from '../components/ui/GoogleMark';
+import SignInOptions from '../components/SignInOptions';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -28,70 +27,11 @@ import { IPL_PLAYERS } from '../data/players';
 // The five highest Arena Ratings, as a taste of the player list
 const TOP_RATED = [...IPL_PLAYERS].sort((a, b) => ratingOf(b.id) - ratingOf(a.id)).slice(0, 5);
 
-const GuestSignIn = ({ onBack }) => {
-  const { loginAsGuest } = useAuth();
-  const { toast } = useToast();
-  const [name, setName] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  const submit = async (e) => {
-    e.preventDefault();
-    if (!name.trim()) return;
-    setBusy(true);
-    try {
-      await loginAsGuest(name.trim());
-    } catch (err) {
-      toast({ message: err.message, tone: 'error' });
-      setBusy(false);
-    }
-  };
-
-  return (
-      <form onSubmit={submit} className="space-y-3">
-        <Field label="Your name" placeholder="e.g. Praneeth" maxLength={24} value={name} onChange={e => setName(e.target.value)} autoFocus />
-        <Button type="submit" size="lg" block icon={UserRound} loading={busy} disabled={!name.trim()}>
-          Play as a guest
-        </Button>
-        <Button variant="ghost" size="sm" block icon={ArrowLeft} onClick={onBack}>Other ways to sign in</Button>
-      </form>
-  );
-};
-
-const SignInPanel = () => {
-  const { googleEnabled, loginWithGoogle } = useAuth();
-  const { toast } = useToast();
-  const [view, setView] = useState('choose'); // choose | email | guest
-
-  const signInWithGoogle = async () => {
-    try {
-      await loginWithGoogle();
-    } catch (err) {
-      toast({ message: err.message, tone: 'error' });
-    }
-  };
-
-  return (
-    <Panel label="Start playing" accent="signal" className="w-full max-w-md" bodyClassName="p-4 sm:p-5">
-      {view === 'email' && <EmailAuthForm onBack={() => setView('choose')} />}
-      {view === 'guest' && <GuestSignIn onBack={() => setView('choose')} />}
-      {view === 'choose' && (
-        <div className="space-y-2.5">
-          {googleEnabled && (
-            <Button size="lg" block icon={GoogleMark} onClick={signInWithGoogle}>Continue with Google</Button>
-          )}
-          <Button variant={googleEnabled ? 'outline' : 'primary'} size="lg" block icon={Mail} onClick={() => setView('email')}>
-            Continue with email
-          </Button>
-          <Button variant="outline" size="lg" block icon={UserRound} onClick={() => setView('guest')}>Play as a guest</Button>
-          <p className="pt-1 text-xs leading-relaxed text-haze">
-            Guests can play straight away. Sign in with {googleEnabled ? 'Google or email' : 'email'} to keep your auction
-            history on any device.
-          </p>
-        </div>
-      )}
-    </Panel>
-  );
-};
+const SignInPanel = () => (
+  <Panel label="Start playing" accent="signal" className="w-full max-w-md" bodyClassName="p-4 sm:p-5">
+    <SignInOptions />
+  </Panel>
+);
 
 // ─── Signed in: host a room or join one ───
 

@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, Navigate, useParams } from 'react-router-dom';
-import { Check, Copy, History, Home, List, MessageSquare, Pause, Play, Radio, Settings, ShieldAlert, Square, Trophy } from 'lucide-react';
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import {
+  Check, Copy, Eye, History, Home, List, MessageSquare, Pause, Play, Radio, Settings, ShieldAlert, Square, Trophy, Users,
+} from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useAuction } from '../hooks/useAuction';
 import { useToast } from '../hooks/useToast';
@@ -29,6 +31,8 @@ import BidConsole from '../components/auction/BidConsole';
 import ResultBanner from '../components/auction/ResultBanner';
 import RoomSettingsModal from '../components/auction/RoomSettingsModal';
 import PlayerPoolModal from '../components/auction/PlayerPoolModal';
+import ParticipantsModal from '../components/auction/ParticipantsModal';
+import ClaimFranchise from '../components/auction/ClaimFranchise';
 import LiveBidBar from '../components/auction/LiveBidBar';
 import BidTrail from '../components/auction/BidTrail';
 import UpNext from '../components/auction/UpNext';
@@ -60,24 +64,29 @@ const FullScreenNotice = ({ icon: Icon, title, children }) => (
 const AuctionRoom = () => {
   const { id: rawId } = useParams();
   const id = rawId.toUpperCase();
+  // ?watch=1: follow the auction from the stands without joining it
+  const [searchParams] = useSearchParams();
+  const wantsToWatch = searchParams.get('watch') === '1';
+  const navigate = useNavigate();
   const { toast } = useToast();
   const { user, loading: authLoading } = useAuth();
   const {
     currentAuction, roomTeams, team, loading, roomError, messages, bidTrail,
-    joinAuction, placeBid, pauseAuction, resumeAuction, endAuction, updateRoomSettings, getSyncedTime,
+    joinAuction, joinRoom, placeBid, pauseAuction, resumeAuction, endAuction, updateRoomSettings, kickPlayer, getSyncedTime,
   } = useAuction();
-  useDocumentTitle(`Live ${id}`);
+  const spectating = wantsToWatch && !team;
+  useDocumentTitle(`${spectating ? 'Watching' : 'Live'} ${id}`);
 
   const [optimistic, setOptimistic] = useState(null);
   const [timeLeft, setTimeLeft] = useState(null);
   const [copied, setCopied] = useState(false);
   const [mobileTab, setMobileTab] = useState('stage');
   const [sideTab, setSideTab] = useState('feed');
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [poolOpen, setPoolOpen] = useState(false);
-  const [confirmEnd, setConfirmEnd] = useState(false);
+  const [overlay, setOverlay] = useState(null); // 'pool' | 'people' | 'settings' | 'end'
   const wideScreen = useMediaQuery('(min-width: 1280px)');
 
+  // Follow the room live. Arriving here doesn't make you a member: a latecomer only joins by
+  // claiming a franchise, so anyone who chooses to watch counts as watching.
   useEffect(() => (user?.uid ? joinAuction(id) : undefined), [id, user?.uid, joinAuction]);
 
   // Show our own bid at once, until the server's state catches up, moves on or stops bidding
@@ -195,6 +204,16 @@ const AuctionRoom = () => {
     }
   };
   const setBidTimer = (seconds) => runHostAction(roomId => updateRoomSettings(roomId, { bidTimer: seconds }));
+  const removePerson = (person) => runHostAction(roomId => kickPlayer(roomId, person));
+
+  // A latecomer claims a free franchise and goes straight onto the bidding desk
+  const claimFranchise = async (teamId) => {
+    try {
+      await joinRoom(id, { teamId });
+    } catch (err) {
+      toast({ message: err.message, tone: 'error' });
+    }
+  };
 
   const copyCode = async () => {
     try {
@@ -208,7 +227,7 @@ const AuctionRoom = () => {
 
   // ─── Before the stage ───
   if (authLoading) return <Spinner className="min-h-dvh" />;
-  if (!user) return <Navigate to={`/lobby/${id}`} replace />;
+  if (!user) return <Navigate to={`/lobby/${id}${wantsToWatch ? '?watch=1' : ''}`} replace />;
   if (roomError?.code === 'kicked' || currentAuction?.bannedPlayers?.includes(user.uid)) {
     return <FullScreenNotice icon={ShieldAlert} title="Removed from room">The host removed you from this auction.</FullScreenNotice>;
   }
@@ -216,8 +235,18 @@ const AuctionRoom = () => {
     return <FullScreenNotice icon={Radio} title="Room not found">There's no auction with the code {id}. Check the code and try again.</FullScreenNotice>;
   }
   if (loading || !currentAuction) return <Spinner className="min-h-dvh" />;
-  if (currentAuction.status === 'waiting') return <Navigate to={`/lobby/${id}`} replace />;
+  if (currentAuction.status === 'waiting') return <Navigate to={`/lobby/${id}${wantsToWatch ? '?watch=1' : ''}`} replace />;
   if (currentAuction.status === 'completed') return <Navigate to={`/summary/${id}`} replace />;
+  // Arrived after the start without a franchise: claim a free one or watch
+  if (!spectating && !team) {
+    return (
+      <ClaimFranchise
+        takenTeamIds={new Set(roomTeams.map(t => t.teamId))}
+        onClaim={claimFranchise}
+        onWatch={() => navigate(`/auction/${id}?watch=1`, { replace: true })}
+      />
+    );
+  }
 
   // ─── The stage ───
   const stage = (
@@ -243,6 +272,8 @@ const AuctionRoom = () => {
 
       <div className="sticky bottom-16 z-10 -mx-3 bg-ink-950/90 px-3 py-2 backdrop-blur sm:static sm:mx-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
         <BidConsole
+          watching={spectating}
+          onJoin={() => navigate(`/auction/${id}`, { replace: true })}
           team={team}
           squadLimit={squadLimit}
           overseasLimit={overseasLimit}
@@ -254,7 +285,7 @@ const AuctionRoom = () => {
         />
       </div>
 
-      <UpNext players={upNext} onShowAll={() => setPoolOpen(true)} />
+      <UpNext players={upNext} onShowAll={() => setOverlay('pool')} />
     </div>
   );
 
@@ -278,12 +309,17 @@ const AuctionRoom = () => {
           <span className="hidden sm:inline-flex"><Logo size="sm" /></span>
         </Link>
         <span className="mx-1 hidden h-6 w-px bg-white/10 sm:block" aria-hidden />
-        <LiveTag />
+        {spectating ? <Tag tone="signal" icon={Eye}>Watching</Tag> : <LiveTag />}
         <button onClick={copyCode} className="flex items-center gap-1.5 rounded-md px-2 py-1 font-display text-base font-bold tracking-[0.2em] hover:bg-white/5 cursor-pointer" aria-label="Copy room code">
           {id} {copied ? <Check size={14} className="text-volt" /> : <Copy size={14} className="text-haze" />}
         </button>
         <span className="hidden font-display text-sm uppercase tracking-wider text-haze md:inline">
           {MODE_META[currentAuction.auctionType]?.short}
+        </span>
+        <span className="hidden items-center gap-1 text-sm text-haze sm:flex" title="Watching">
+          <Eye size={14} aria-hidden />
+          <span className="tabular">{currentAuction.spectatorCount ?? 0}</span>
+          <span className="sr-only">watching</span>
         </span>
         <div className="ml-auto flex items-center gap-0.5 sm:gap-1">
           {isHost && (
@@ -295,13 +331,14 @@ const AuctionRoom = () => {
                   <span className="hidden sm:inline">Pause</span>
                 </Button>
               )}
-              <Button size="sm" variant="danger" icon={Square} onClick={() => setConfirmEnd(true)} aria-label="End auction">
+              <Button size="sm" variant="danger" icon={Square} onClick={() => setOverlay('end')} aria-label="End auction">
                 <span className="hidden sm:inline">End</span>
               </Button>
             </>
           )}
-          <IconButton icon={List} label="Player pool" onClick={() => setPoolOpen(true)} />
-          <IconButton icon={Settings} label="Settings" onClick={() => setSettingsOpen(true)} />
+          <IconButton icon={List} label="Player pool" onClick={() => setOverlay('pool')} />
+          <IconButton icon={Users} label="People in the room" onClick={() => setOverlay('people')} />
+          <IconButton icon={Settings} label="Settings" onClick={() => setOverlay('settings')} />
           {team && (
             <>
               <TeamCrest teamId={team.teamId} size="sm" className="ml-1" />
@@ -378,8 +415,8 @@ const AuctionRoom = () => {
       </nav>
 
       <PlayerPoolModal
-        open={poolOpen}
-        onClose={() => setPoolOpen(false)}
+        open={overlay === 'pool'}
+        onClose={() => setOverlay(null)}
         playerOrder={playerOrder}
         currentIndex={lotIndex}
         currentPlayerId={live?.playerId}
@@ -395,9 +432,17 @@ const AuctionRoom = () => {
           />
         ) : null}
       />
+      <ParticipantsModal
+        open={overlay === 'people'}
+        onClose={() => setOverlay(null)}
+        players={players}
+        spectatorCount={currentAuction.spectatorCount ?? 0}
+        isHost={isHost}
+        onKick={removePerson}
+      />
       <RoomSettingsModal
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
+        open={overlay === 'settings'}
+        onClose={() => setOverlay(null)}
         isHost={isHost}
         bidTimer={bidTimer}
         onTimer={setBidTimer}
@@ -405,15 +450,15 @@ const AuctionRoom = () => {
         sounds={sounds}
       />
       <ConfirmDialog
-        open={confirmEnd}
+        open={overlay === 'end'}
         title="End the auction now?"
         message="Bidding stops for everyone and the remaining players won't be auctioned. Squads bought so far are final."
         confirmLabel="End auction"
         onConfirm={() => {
-          setConfirmEnd(false);
+          setOverlay(null);
           runHostAction(endAuction);
         }}
-        onCancel={() => setConfirmEnd(false)}
+        onCancel={() => setOverlay(null)}
       />
     </div>
   );
