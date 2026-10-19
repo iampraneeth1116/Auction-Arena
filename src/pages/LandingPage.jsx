@@ -1,41 +1,203 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Check, Gavel, LogIn } from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import {
+  ArrowRight, Bot, Check, ChevronDown, CircleAlert, Clock, Eye, Gavel, History, LogIn, Radar, RefreshCw, Search, Trash2, Users,
+} from 'lucide-react';
 import PageShell from '../components/ui/PageShell';
 import Panel from '../components/ui/Panel';
 import Button from '../components/ui/Button';
-import Field from '../components/ui/Field';
-import Tag from '../components/ui/Tag';
+import Tag, { LiveTag } from '../components/ui/Tag';
 import Segmented from '../components/ui/Segmented';
 import TeamCrest from '../components/ui/TeamCrest';
 import PlayerPhoto from '../components/ui/PlayerPhoto';
 import RatingBadge from '../components/ui/RatingBadge';
+import Toggle from '../components/ui/Toggle';
+import Stat from '../components/ui/Stat';
+import Spinner from '../components/ui/Spinner';
+import EmptyState from '../components/ui/EmptyState';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
+import { buttonClasses } from '../components/ui/styles';
 import SignInOptions from '../components/SignInOptions';
+import OverseasLimitPicker from '../components/OverseasLimitPicker';
+import AuctionActivityFeed from '../components/AuctionActivityFeed';
+import Footer from '../components/Footer';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useAuction } from '../hooks/useAuction';
-import { auctionPoolSize, ratingOf } from '../lib/catalog';
-import { BID_TIMER_PRESETS, MODE_META, overseasLimitLabel } from '../lib/format';
-import Toggle from '../components/ui/Toggle';
-import OverseasLimitPicker from '../components/OverseasLimitPicker';
-import Footer from '../components/Footer';
+import { api } from '../lib/api';
 import { cn } from '../lib/cn';
+import { TEAMS_BY_ID, auctionPoolSize, ratingOf, teamStrength, withPlayer } from '../lib/catalog';
+import { BID_TIMER_PRESETS, MODE_META, ROLES, ROLE_META, formatPrice, overseasLimitLabel } from '../lib/format';
 import { TEAMS } from '../data/teams';
 import { IPL_PLAYERS } from '../data/players';
+
+const LABEL = 'font-display text-xs font-semibold uppercase tracking-[0.14em] text-haze';
+const MODES = ['mega', 'sprint11', 'sprint5', 'blitz5'];
+const POLL_MS = 20000;
+
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+const joinError = (err) =>
+  err?.code === 'kicked' ? 'The host removed you from that room.' : err?.message || 'Something went wrong. Please try again.';
+
+const LoadError = ({ message, onRetry }) => (
+  <div className="flex flex-col items-center gap-3 px-6 py-10 text-center" role="alert">
+    <CircleAlert size={22} className="text-flare" />
+    <p className="text-sm text-mist">{message}</p>
+    <Button variant="outline" size="sm" icon={RefreshCw} onClick={onRetry}>Try again</Button>
+  </div>
+);
+
+// ─── Page ───
+
+const LandingPage = () => {
+  useDocumentTitle();
+  const { user } = useAuth();
+  return user ? <ControlRoom /> : <SignedOut />;
+};
+
+// ─── Signed out ───
 
 // The five highest Arena Ratings, as a taste of the player list
 const TOP_RATED = [...IPL_PLAYERS].sort((a, b) => ratingOf(b.id) - ratingOf(a.id)).slice(0, 5);
 
-const SignInPanel = () => (
-  <Panel label="Start playing" accent="signal" className="w-full max-w-md" bodyClassName="p-4 sm:p-5">
-    <SignInOptions />
-  </Panel>
+const SignedOut = () => (
+  <PageShell>
+    <AuctionActivityFeed className="mt-4" />
+
+    <section className="grid items-center gap-10 py-12 sm:py-16 lg:grid-cols-[minmax(0,1fr)_24rem]">
+      <div className="space-y-5">
+        <Tag tone="signal">Live IPL auction game</Tag>
+        <h1 className="font-display text-5xl font-extrabold uppercase leading-none sm:text-7xl">
+          Run the IPL auction
+          <br />
+          <span className="text-signal">with your friends</span>
+        </h1>
+        <p className="max-w-xl text-lg text-mist">
+          Claim a franchise, bid live against each other on {IPL_PLAYERS.length} real players, and see who builds the
+          best squad.
+        </p>
+        <div className="flex flex-wrap gap-2" aria-label="The ten franchises">
+          {TEAMS.map(team => (
+            <TeamCrest key={team.id} teamId={team.id} size="md" />
+          ))}
+        </div>
+      </div>
+
+      <Panel label="Start playing" accent="signal" className="w-full max-w-md" bodyClassName="p-4 sm:p-5">
+        <SignInOptions />
+      </Panel>
+    </section>
+
+    <section>
+      <h2 className="mb-3 font-display text-sm font-semibold uppercase tracking-[0.16em] text-haze">Top rated</h2>
+      <ul className="grid gap-2 sm:grid-cols-5">
+        {TOP_RATED.map(player => (
+          <li key={player.id} className="flex items-center gap-3 rounded-md border border-white/8 bg-ink-850/80 p-2">
+            <PlayerPhoto player={player} className="size-10 shrink-0" />
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold">{player.name}</span>
+            <RatingBadge rating={ratingOf(player.id)} size="sm" />
+          </li>
+        ))}
+      </ul>
+    </section>
+
+    <Footer />
+  </PageShell>
 );
 
-// ─── Signed in: host a room or join one ───
+// ─── Signed in: the control room ───
 
-const MODES = ['mega', 'sprint11', 'sprint5', 'blitz5'];
+const TABS = [
+  { id: 'host', label: 'Host', icon: Gavel },
+  { id: 'join', label: 'Join', icon: LogIn },
+  { id: 'history', label: 'History', icon: History },
+];
+const TAB_KEY = 'aa_control_room_tab';
+
+const readSavedTab = () => {
+  try {
+    const saved = sessionStorage.getItem(TAB_KEY);
+    return TABS.some(t => t.id === saved) ? saved : 'host';
+  } catch {
+    return 'host'; // storage blocked
+  }
+};
+
+const ControlRoom = () => {
+  const [tab, setTab] = useState(readSavedTab);
+
+  const changeTab = (next) => {
+    setTab(next);
+    try {
+      sessionStorage.setItem(TAB_KEY, next);
+    } catch {
+      // storage blocked: the tab just won't be remembered
+    }
+  };
+
+  return (
+    <PageShell>
+      <AuctionActivityFeed className="mt-4" />
+
+      <div className="pt-6 sm:pt-8">
+        <h1 className="font-display text-3xl font-bold uppercase tracking-wide text-snow sm:text-4xl">Control room</h1>
+        <p className="mt-1 text-sm text-mist">Host a new auction, join one, or look back at your squads.</p>
+      </div>
+
+      <div className="mt-5 border-b border-white/8">
+        <Segmented options={TABS} value={tab} onChange={changeTab} stretch className="sm:max-w-sm" />
+      </div>
+
+      <div role="tabpanel" aria-label={TABS.find(t => t.id === tab)?.label} className="py-6">
+        {tab === 'host' && <HostTab />}
+        {tab === 'join' && <JoinTab />}
+        {tab === 'history' && <HistoryTab />}
+      </div>
+
+      <Footer />
+    </PageShell>
+  );
+};
+
+// ─── Host ───
+
+const FranchiseTile = ({ team, selected, onSelect }) => (
+  <button
+    type="button"
+    aria-pressed={selected}
+    onClick={onSelect}
+    className={cn(
+      'relative flex min-w-0 items-center gap-2.5 overflow-hidden rounded-md border p-2 text-left transition-colors cursor-pointer',
+      'md:flex-col md:gap-2 md:px-2 md:pb-3 md:pt-3 md:text-center',
+      selected ? 'border-transparent text-snow' : 'border-white/8 bg-ink-900/60 text-mist hover:border-ink-500 hover:text-snow',
+    )}
+    style={selected ? {
+      background: `linear-gradient(150deg, ${team.colors.primary}80, ${team.colors.primary}1a 75%)`,
+      boxShadow: `inset 0 0 0 2px color-mix(in srgb, ${team.colors.primary} 70%, white)`,
+    } : undefined}
+  >
+    <span className="relative shrink-0">
+      <TeamCrest teamId={team.id} size="md" />
+      {selected && (
+        <span className="absolute -right-1.5 -top-1.5 flex size-4.5 items-center justify-center rounded-full bg-snow text-ink-950 ring-2 ring-ink-850">
+          <Check size={11} strokeWidth={3.5} />
+        </span>
+      )}
+    </span>
+    <span className="min-w-0 flex-1 break-words font-display text-[13px] font-semibold uppercase leading-tight tracking-wide md:flex-none">
+      {team.name}
+    </span>
+    {selected && (
+      <span className="absolute inset-x-0 bottom-0 flex h-1" aria-hidden>
+        <span className="flex-1" style={{ background: team.colors.primary }} />
+        <span className="flex-1" style={{ background: team.colors.secondary }} />
+      </span>
+    )}
+  </button>
+);
 
 const ModeCard = ({ mode, selected, onSelect }) => {
   const meta = MODE_META[mode];
@@ -69,12 +231,14 @@ const HostTab = () => {
   const { createRoom } = useAuction();
   const [teamId, setTeamId] = useState(TEAMS[0].id);
   const [mode, setMode] = useState('mega');
+  const [isPublic, setIsPublic] = useState(false);
   const [quickPool, setQuickPool] = useState(false);
   const [rotateUnsold, setRotateUnsold] = useState(true);
   // null until the host picks one: then each mode's own value applies
   const [timerChoice, setTimerChoice] = useState(null);
   const [overseasChoice, setOverseasChoice] = useState(null);
   const [busy, setBusy] = useState(false);
+  const team = TEAMS_BY_ID.get(teamId);
   const bidTimer = timerChoice ?? MODE_META[mode].timer;
   const squadSize = MODE_META[mode].squad;
   // A choice made for a bigger squad can't exceed this mode's squad size
@@ -83,178 +247,519 @@ const HostTab = () => {
   const create = async () => {
     setBusy(true);
     try {
-      const id = await createRoom({ teamId, auctionType: mode, quickPool, rotateUnsold, bidTimer, overseasLimit });
+      const id = await createRoom({ teamId, auctionType: mode, isPublic, quickPool, rotateUnsold, bidTimer, overseasLimit });
       navigate(`/lobby/${id}`);
     } catch (err) {
-      toast({ message: err.message, tone: 'error' });
+      toast({ message: err.message || 'Could not create the room. Please try again.', tone: 'error' });
       setBusy(false);
     }
   };
 
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-mist">Pick your franchise. Friends join with the room code and pick theirs.</p>
-      <div className="grid grid-cols-5 gap-2">
-        {TEAMS.map(team => (
-          <button
-            key={team.id}
-            onClick={() => setTeamId(team.id)}
-            aria-pressed={team.id === teamId}
-            className={cn('relative flex flex-col items-center gap-1 rounded-md border p-2 transition-colors cursor-pointer',
-              team.id === teamId ? 'border-signal bg-signal/10' : 'border-white/8 hover:border-ink-500')}
-          >
-            <TeamCrest teamId={team.id} size="md" className="border-0" />
-            <span className="font-display text-xs font-bold">{team.id}</span>
-            {team.id === teamId && <Check size={12} className="absolute right-1 top-1 text-signal" />}
-          </button>
-        ))}
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
+      <div className="min-w-0 space-y-4">
+        <Panel label="Pick your franchise" bodyClassName="p-3 sm:p-4">
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+            {TEAMS.map(t => (
+              <FranchiseTile key={t.id} team={t} selected={t.id === teamId} onSelect={() => setTeamId(t.id)} />
+            ))}
+          </div>
+        </Panel>
+
+        <Panel label="Choose a format" bodyClassName="p-3 sm:p-4">
+          <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label="Format">
+            {MODES.map(m => <ModeCard key={m} mode={m} selected={m === mode} onSelect={() => setMode(m)} />)}
+          </div>
+        </Panel>
       </div>
-      <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label="Format">
-        {MODES.map(m => <ModeCard key={m} mode={m} selected={m === mode} onSelect={() => setMode(m)} />)}
-      </div>
-      <div>
-        <div className="mb-1.5 flex items-baseline justify-between">
-          <span className="font-display text-xs font-semibold uppercase tracking-[0.14em] text-haze">Time per bid</span>
-          <span className="text-xs text-haze">{bidTimer <= 5 ? 'Fast game' : 'Relaxed game'}</span>
+
+      <Panel label="Your room" accent="signal" className="lg:sticky lg:top-20" bodyClassName="space-y-4 p-4">
+        <div className="flex items-center gap-3">
+          <TeamCrest teamId={teamId} size="lg" />
+          <div className="min-w-0">
+            <p className="font-display text-xl font-bold uppercase leading-tight tracking-wide text-snow">{team.name}</p>
+            <p className="text-sm text-haze">“{team.motto}”</p>
+          </div>
         </div>
-        <div className="grid grid-cols-6 gap-1" role="radiogroup" aria-label="Time per bid">
-          {BID_TIMER_PRESETS.map(seconds => (
-            <button
-              key={seconds}
-              type="button"
-              role="radio"
-              aria-checked={seconds === bidTimer}
-              onClick={() => setTimerChoice(seconds)}
-              className={cn(
-                'h-9 rounded-md border font-display text-sm font-semibold tabular transition-colors cursor-pointer',
-                seconds === bidTimer ? 'border-signal bg-signal/15 text-signal' : 'border-white/8 text-mist hover:border-ink-500',
-              )}
-            >
-              {seconds}s
-            </button>
-          ))}
+        <div>
+          <div className="mb-1.5 flex items-baseline justify-between">
+            <span className={LABEL}>Time per bid</span>
+            <span className="text-xs text-haze">{bidTimer <= 5 ? 'Fast game' : 'Relaxed game'}</span>
+          </div>
+          <div className="grid grid-cols-6 gap-1" role="radiogroup" aria-label="Time per bid">
+            {BID_TIMER_PRESETS.map(seconds => (
+              <button
+                key={seconds}
+                type="button"
+                role="radio"
+                aria-checked={seconds === bidTimer}
+                onClick={() => setTimerChoice(seconds)}
+                className={cn(
+                  'h-9 rounded-md border font-display text-sm font-semibold tabular transition-colors cursor-pointer',
+                  seconds === bidTimer ? 'border-signal bg-signal/15 text-signal' : 'border-white/8 text-mist hover:border-ink-500',
+                )}
+              >
+                {seconds}s
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-xs text-haze">Every bid restarts the clock. You can change this in the lobby too.</p>
         </div>
-        <p className="mt-1.5 text-xs text-haze">Every bid restarts the clock. You can change this in the lobby too.</p>
-      </div>
-      <Toggle
-        checked={quickPool}
-        onChange={setQuickPool}
-        label="Quick pool"
-        description={`Players auctioned = franchises playing × ${squadSize} squad slots + 10 spares. With all ten teams that's ${auctionPoolSize({ auctionType: mode, quickPool: true, franchises: 10, squadLimit: squadSize })}, instead of ${auctionPoolSize({ auctionType: mode, quickPool: false })}.`}
-      />
-      <Toggle
-        checked={rotateUnsold}
-        onChange={setRotateUnsold}
-        label="Unsold come back"
-        description="After the last player, unsold players return in rounds until squads fill or a round sells nobody."
-      />
-      <div>
-        <div className="mb-1.5 flex items-baseline justify-between">
-          <span className="font-display text-xs font-semibold uppercase tracking-[0.14em] text-haze">Overseas per squad</span>
-          <span className="text-xs text-haze">{overseasLimitLabel(overseasLimit, squadSize)}{overseasLimit === MODE_META[mode].overseas ? ' (usual)' : ''}</span>
+        <Toggle
+          checked={isPublic}
+          onChange={setIsPublic}
+          label="List in open rooms"
+          description="Anyone signed in can find it under Join to take a franchise or watch."
+        />
+        <Toggle
+          checked={quickPool}
+          onChange={setQuickPool}
+          label="Quick pool"
+          description={`Players auctioned = franchises playing × ${squadSize} squad slots + 10 spares. With all ten teams that's ${auctionPoolSize({ auctionType: mode, quickPool: true, franchises: 10, squadLimit: squadSize })}, instead of ${auctionPoolSize({ auctionType: mode, quickPool: false })}.`}
+        />
+        <Toggle
+          checked={rotateUnsold}
+          onChange={setRotateUnsold}
+          label="Unsold come back"
+          description="After the last player, unsold players return in rounds until squads fill or a round sells nobody."
+        />
+        <div>
+          <div className="mb-1.5 flex items-baseline justify-between">
+            <span className={LABEL}>Overseas per squad</span>
+            <span className="text-xs text-haze">{overseasLimitLabel(overseasLimit, squadSize)}{overseasLimit === MODE_META[mode].overseas ? ' (usual)' : ''}</span>
+          </div>
+          <OverseasLimitPicker value={overseasLimit} squadLimit={squadSize} defaultLimit={MODE_META[mode].overseas} onChange={setOverseasChoice} />
         </div>
-        <OverseasLimitPicker value={overseasLimit} squadLimit={squadSize} defaultLimit={MODE_META[mode].overseas} onChange={setOverseasChoice} />
-      </div>
-      <Button size="lg" block slant icon={Gavel} loading={busy} onClick={create}>Create room</Button>
+        <Button size="lg" block slant icon={Gavel} loading={busy} onClick={create}>Create room</Button>
+        <p className="text-xs leading-relaxed text-haze">
+          You get a six-character code to share. Empty franchises can be filled with bots from the lobby.
+        </p>
+      </Panel>
     </div>
   );
 };
+
+// ─── Join ───
+
+const ROOM_CODE_LENGTH = 6;
 
 const JoinTab = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { joinRoom } = useAuction();
-  const [code, setCode] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [joining, setJoining] = useState(null); // the room code being joined
 
-  const join = async (e) => {
-    e.preventDefault();
-    setBusy(true);
+  const join = async (code) => {
+    setJoining(code);
     try {
-      const id = await joinRoom(code.trim());
+      const id = await joinRoom(code);
       navigate(`/lobby/${id}`);
     } catch (err) {
-      toast({ message: err.message, tone: 'error' });
-      setBusy(false);
+      toast({ message: joinError(err), tone: 'error' });
+      setJoining(null);
     }
   };
 
   return (
-    <form onSubmit={join} className="space-y-3">
-      <Field
-        label="Room code"
-        placeholder="ABC123"
-        value={code}
-        onChange={e => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6))}
-        inputClassName="font-display text-xl tracking-[0.3em]"
-      />
-      <Button type="submit" size="lg" block icon={LogIn} loading={busy} disabled={code.length !== 6}>Join room</Button>
-    </form>
+    <div className="grid gap-4 lg:grid-cols-[20rem_minmax(0,1fr)] lg:items-start">
+      <JoinByCode onJoin={join} joining={joining} />
+      <OpenRooms onJoin={join} joining={joining} />
+    </div>
   );
 };
 
-const ControlRoom = ({ user }) => {
-  const [tab, setTab] = useState('host');
+const JoinByCode = ({ onJoin, joining }) => {
+  const [code, setCode] = useState('');
+  const ready = code.length === ROOM_CODE_LENGTH;
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (ready) onJoin(code);
+  };
+
   return (
-    <Panel label={`Welcome, ${user.displayName}`} accent="volt" className="w-full max-w-md" bodyClassName="space-y-4 p-4 sm:p-5">
-      <Segmented
-        options={[{ id: 'host', label: 'Host', icon: Gavel }, { id: 'join', label: 'Join', icon: LogIn }]}
-        value={tab}
-        onChange={setTab}
-        stretch
-      />
-      {tab === 'host' ? <HostTab /> : <JoinTab />}
+    <Panel label="Join with a code" accent="volt" bodyClassName="p-4">
+      <form onSubmit={submit} className="space-y-3">
+        <label className="block space-y-1.5">
+          <span className="block font-display text-xs font-semibold uppercase tracking-[0.14em] text-mist">Room code</span>
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, ROOM_CODE_LENGTH))}
+            maxLength={ROOM_CODE_LENGTH}
+            placeholder="ABC123"
+            autoComplete="off"
+            autoCapitalize="characters"
+            spellCheck={false}
+            className="h-14 w-full rounded-md border border-ink-500 bg-ink-900/70 px-3 text-center font-display text-3xl font-bold uppercase tracking-[0.35em] text-snow tabular placeholder:text-ink-600 transition-colors focus:border-signal focus:outline-none"
+          />
+          <span className="block text-xs text-haze">Six letters and numbers. The host can copy it from their lobby.</span>
+        </label>
+        <Button type="submit" variant="volt" size="lg" block icon={LogIn} disabled={!ready || Boolean(joining)} loading={ready && joining === code}>
+          Join room
+        </Button>
+      </form>
     </Panel>
   );
 };
 
-const LandingPage = () => {
-  useDocumentTitle();
-  const { user } = useAuth();
+const MODE_FILTERS = [{ id: 'all', label: 'All' }, ...MODES.map(m => ({ id: m, label: MODE_META[m].short }))];
+
+const OpenRooms = ({ onJoin, joining }) => {
+  const [rooms, setRooms] = useState(null); // null until the first load
+  const [error, setError] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [query, setQuery] = useState('');
+  const [modeFilter, setModeFilter] = useState('all');
+
+  const load = useCallback(
+    () => api('/api/rooms/public')
+      .then(({ rooms: list }) => {
+        setRooms(list);
+        setError('');
+      })
+      .catch((err) => setError(err.message || 'Could not load open rooms.')),
+    [],
+  );
+
+  // Keeps refreshing while the Join tab is open (this component only exists then)
+  useEffect(() => {
+    const first = setTimeout(load, 0);
+    const timer = setInterval(load, POLL_MS);
+    return () => {
+      clearTimeout(first);
+      clearInterval(timer);
+    };
+  }, [load]);
+
+  const refresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  };
+
+  const needle = query.trim().toLowerCase();
+  const visible = (rooms ?? []).filter(room =>
+    (modeFilter === 'all' || room.auctionType === modeFilter) &&
+    (!needle || room.id.toLowerCase().includes(needle) || room.hostName.toLowerCase().includes(needle)),
+  );
+
+  let body;
+  if (rooms === null) {
+    body = error ? <LoadError message={error} onRetry={refresh} /> : <Spinner label="Looking for open rooms" />;
+  } else if (rooms.length === 0) {
+    body = (
+      <EmptyState icon={Radar} title="No open rooms right now">
+        Host one with “List in open rooms” switched on, or join a friend with their code.
+      </EmptyState>
+    );
+  } else if (visible.length === 0) {
+    body = (
+      <EmptyState icon={Search} title="No rooms match">
+        Try another code, host name or format.
+      </EmptyState>
+    );
+  } else {
+    body = (
+      <ul className="divide-y divide-white/6">
+        {visible.map(room => <RoomRow key={room.id} room={room} onJoin={onJoin} joining={joining} />)}
+      </ul>
+    );
+  }
 
   return (
-    <PageShell>
-      <section className="grid items-center gap-10 py-12 sm:py-16 lg:grid-cols-[minmax(0,1fr)_24rem]">
-        <div className="space-y-5">
-          <Tag tone="signal">Live IPL auction game</Tag>
-          <h1 className="font-display text-5xl font-extrabold uppercase leading-none sm:text-7xl">
-            Run the IPL auction
-            <br />
-            <span className="text-signal">with your friends</span>
-          </h1>
-          <p className="max-w-xl text-lg text-mist">
-            Claim a franchise, bid live against each other on {IPL_PLAYERS.length} real players, and see who builds the
-            best squad.
-          </p>
-          <div className="flex flex-wrap gap-2" aria-label="The ten franchises">
-            {TEAMS.map(team => (
-              <TeamCrest key={team.id} teamId={team.id} size="md" />
+    <Panel
+      label={rooms?.length ? `Open rooms · ${rooms.length}` : 'Open rooms'}
+      actions={<Button variant="ghost" size="sm" icon={RefreshCw} loading={refreshing} onClick={refresh}>Refresh</Button>}
+    >
+      <div className="flex flex-col gap-2 border-b border-white/6 p-3 sm:flex-row sm:items-center">
+        <label className="relative block min-w-0 flex-1">
+          <span className="sr-only">Search open rooms by code or host</span>
+          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-haze" aria-hidden />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by code or host"
+            className="h-10 w-full rounded-md border border-ink-500 bg-ink-900/70 pl-9 pr-3 text-sm text-snow placeholder:text-haze transition-colors focus:border-signal focus:outline-none"
+          />
+        </label>
+        <Segmented options={MODE_FILTERS} value={modeFilter} onChange={setModeFilter} size="sm" />
+      </div>
+      {body}
+      {error && rooms !== null && (
+        <p className="border-t border-white/6 px-4 py-2 text-xs text-flare" role="status">Couldn’t refresh just now. Showing the last list.</p>
+      )}
+    </Panel>
+  );
+};
+
+const RoomRow = ({ room, onJoin, joining }) => {
+  const live = room.status === 'active';
+  const canJoin = !live && room.openTeams > 0;
+  const watchHref = `/${live ? 'auction' : 'lobby'}/${room.id}?watch=1`;
+
+  return (
+    <li className="relative flex flex-col gap-3 py-3 pl-5 pr-3 sm:flex-row sm:items-center sm:pr-4">
+      <span className={cn('absolute inset-y-3 left-0 w-1 rounded-r-sm', live ? 'bg-flare' : 'bg-signal')} aria-hidden />
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+          <span className="font-display text-lg font-bold tracking-[0.12em] text-snow tabular">{room.id}</span>
+          <Tag tone="signal">{MODE_META[room.auctionType]?.short ?? room.auctionType}</Tag>
+          {live ? (
+            <span className="inline-flex items-center gap-1.5">
+              <LiveTag />
+              <span className="font-display text-xs font-semibold uppercase tracking-wider text-mist tabular">
+                Lot {room.lot}{room.lots ? `/${room.lots}` : ''}
+              </span>
+            </span>
+          ) : (
+            <Tag tone={room.openTeams > 0 ? 'volt' : 'neutral'} icon={Clock}>
+              Waiting · {room.openTeams > 0 ? `${room.openTeams} open` : 'full'}
+            </Tag>
+          )}
+        </div>
+        <p className="mt-1 truncate text-sm text-mist">Hosted by <span className="font-semibold text-snow">{room.hostName}</span></p>
+        <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-haze">
+          <span className="inline-flex items-center gap-1"><Users size={13} aria-hidden /> {plural(room.humans, 'person', 'people')}</span>
+          <span className="inline-flex items-center gap-1"><Bot size={13} aria-hidden /> {plural(room.bots, 'bot')}</span>
+          <span className="inline-flex items-center gap-1"><Eye size={13} aria-hidden /> {room.spectators} watching</span>
+        </div>
+      </div>
+      <div className="flex shrink-0 gap-2 *:flex-1 sm:*:flex-none">
+        {canJoin && (
+          <Button variant="volt" size="sm" icon={LogIn} loading={joining === room.id} disabled={Boolean(joining)} onClick={() => onJoin(room.id)}>
+            Join
+          </Button>
+        )}
+        <Link to={watchHref} className={buttonClasses({ variant: 'outline', size: 'sm' })}>
+          <Eye size={14} /> Watch
+        </Link>
+      </div>
+    </li>
+  );
+};
+
+// ─── History ───
+
+const StatusTag = ({ status }) => {
+  if (status === 'active') return <LiveTag />;
+  if (status === 'waiting') return <Tag tone="signal" icon={Clock}>Waiting</Tag>;
+  return <Tag icon={Check}>Finished</Tag>;
+};
+
+const sessionHref = (session) => {
+  if (session.status === 'completed') return `/summary/${session.roomId}`;
+  if (session.status === 'active') return `/auction/${session.roomId}`;
+  return `/lobby/${session.roomId}`;
+};
+
+const formatDate = (timestamp) =>
+  new Date(timestamp).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+
+const HistoryTab = () => {
+  const { toast } = useToast();
+  const [sessions, setSessions] = useState(null); // null until the first load
+  const [error, setError] = useState('');
+  const [expandedId, setExpandedId] = useState(null);
+  const [removeTarget, setRemoveTarget] = useState(null);
+  const [removing, setRemoving] = useState(false);
+
+  const load = useCallback(
+    () => api('/api/me/history')
+      .then(({ sessions: list }) => {
+        setSessions(list);
+        setError('');
+      })
+      .catch((err) => setError(err.message || 'Could not load your history.')),
+    [],
+  );
+
+  useEffect(() => {
+    const first = setTimeout(load, 0);
+    return () => clearTimeout(first);
+  }, [load]);
+
+  const restore = async (session) => {
+    try {
+      await api(`/api/me/history/${session.id}/restore`, { method: 'POST' });
+      await load();
+      toast({ message: `${session.teamName} is back in your history.`, tone: 'success' });
+    } catch (err) {
+      toast({ message: err.message || 'Could not bring it back. Please try again.', tone: 'error' });
+    }
+  };
+
+  const remove = async () => {
+    const session = removeTarget;
+    if (!session) return;
+    setRemoving(true);
+    try {
+      await api(`/api/me/history/${session.id}`, { method: 'DELETE' });
+      setSessions(list => (list ?? []).filter(s => s.id !== session.id));
+      toast({
+        message: `Removed ${session.teamName} from your history.`,
+        tone: 'success',
+        duration: 6000,
+        action: { label: 'Undo', onClick: () => restore(session) },
+      });
+    } catch (err) {
+      toast({ message: err.message || 'Could not remove it. Please try again.', tone: 'error' });
+    } finally {
+      setRemoving(false);
+      setRemoveTarget(null);
+    }
+  };
+
+  if (sessions === null) {
+    return error ? <Panel><LoadError message={error} onRetry={load} /></Panel> : <Spinner label="Loading your auctions" />;
+  }
+
+  return (
+    <>
+      {sessions.length === 0 ? (
+        <Panel>
+          <EmptyState icon={History} title="No auctions yet">
+            Host or join a room and your squads will show up here.
+          </EmptyState>
+        </Panel>
+      ) : (
+        <>
+          <p className={cn(LABEL, 'mb-3')}>{plural(sessions.length, 'auction')}</p>
+          <ul className="space-y-2">
+            {sessions.map(session => (
+              <HistoryRow
+                key={session.id}
+                session={session}
+                expanded={expandedId === session.id}
+                onToggle={() => setExpandedId(id => (id === session.id ? null : session.id))}
+                onRemove={() => setRemoveTarget(session)}
+              />
             ))}
+          </ul>
+        </>
+      )}
+
+      <ConfirmDialog
+        open={Boolean(removeTarget)}
+        title="Remove from history?"
+        message={removeTarget
+          ? `This hides your ${removeTarget.teamName} squad from ${formatDate(removeTarget.createdAt)}. The room and the other managers' squads stay as they are, and you can undo it straight after.`
+          : ''}
+        confirmLabel="Remove"
+        tone="danger"
+        busy={removing}
+        onConfirm={remove}
+        onCancel={() => !removing && setRemoveTarget(null)}
+      />
+    </>
+  );
+};
+
+const HistoryRow = ({ session, expanded, onToggle, onRemove }) => {
+  const team = TEAMS_BY_ID.get(session.teamId);
+  const live = session.status === 'active';
+  const detailId = `session-${session.id}`;
+
+  return (
+    <li className="relative overflow-hidden rounded-lg border border-white/8 bg-ink-850/85">
+      <span className="absolute inset-y-0 left-0 w-1" style={{ background: team?.colors.primary ?? '#3a4a7a' }} aria-hidden />
+      <div className="flex flex-col gap-3 py-3 pl-4 pr-3 sm:flex-row sm:items-center sm:pl-5 sm:pr-4">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          aria-controls={expanded ? detailId : undefined}
+          className="group flex min-w-0 flex-1 items-center gap-3 rounded-md text-left cursor-pointer"
+        >
+          <TeamCrest teamId={session.teamId} size="md" />
+          <span className="min-w-0 flex-1">
+            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="truncate font-display text-lg font-bold uppercase leading-tight tracking-wide text-snow">{session.teamName}</span>
+              <StatusTag status={session.status} />
+            </span>
+            <span className="mt-0.5 block truncate text-xs text-haze">
+              {MODE_META[session.mode]?.label ?? session.mode} · {formatDate(session.createdAt)}
+              {session.isHost ? ' · You hosted' : ''}
+            </span>
+          </span>
+          <ChevronDown size={18} className={cn('shrink-0 text-haze transition-transform group-hover:text-snow', expanded && 'rotate-180')} aria-hidden />
+          <span className="sr-only">{expanded ? 'Hide squad' : 'Show squad'}</span>
+        </button>
+
+        <div className="flex items-center justify-between gap-4 sm:justify-end">
+          <div className="flex gap-5">
+            <Stat label="Players" value={session.squad.length} size="sm" />
+            <Stat label="Spent" value={formatPrice(session.spent)} size="sm" />
+          </div>
+          <div className="flex items-center gap-1">
+            <Link to={sessionHref(session)} className={buttonClasses({ variant: 'outline', size: 'sm' })}>
+              Open <ArrowRight size={14} />
+            </Link>
+            {!live && (
+              <Button variant="ghost" size="sm" icon={Trash2} onClick={onRemove} aria-label={`Remove ${session.teamName} from history`}>
+                <span className="hidden sm:inline">Remove</span>
+              </Button>
+            )}
           </div>
         </div>
+      </div>
 
-        {user ? (
-          <ControlRoom user={user} />
-        ) : (
-          <SignInPanel />
-        )}
-      </section>
+      {expanded && <SquadDetail id={detailId} session={session} />}
+    </li>
+  );
+};
 
-      <section>
-        <h2 className="mb-3 font-display text-sm font-semibold uppercase tracking-[0.16em] text-haze">Top rated</h2>
-        <ul className="grid gap-2 sm:grid-cols-5">
-          {TOP_RATED.map(player => (
-            <li key={player.id} className="flex items-center gap-3 rounded-md border border-white/8 bg-ink-850/80 p-2">
-              <PlayerPhoto player={player} className="size-10 shrink-0" />
-              <span className="min-w-0 flex-1 truncate text-sm font-semibold">{player.name}</span>
-              <RatingBadge rating={ratingOf(player.id)} size="sm" />
-            </li>
+const SquadDetail = ({ id, session }) => {
+  const players = session.squad.map(withPlayer).filter(Boolean);
+  const strength = teamStrength(session.squad, session.squadLimit, session.overseasLimit);
+  const groups = ROLES
+    .map(role => ({ role, players: players.filter(p => p.role === role).sort((a, b) => b.bid - a.bid) }))
+    .filter(group => group.players.length > 0);
+
+  return (
+    <motion.div
+      id={id}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.2 }}
+      className="border-t border-white/6 bg-ink-900/50 px-4 py-4 sm:px-5"
+    >
+      <div className="grid max-w-xl grid-cols-3 gap-3">
+        <Stat label="Arena Strength" value={players.length ? strength.score : '–'} tone="signal" />
+        <Stat label="Purse left" value={formatPrice(session.budgetRemaining)} tone="volt" />
+        <Stat label="Squad" value={`${players.length}/${session.squadLimit}`} />
+      </div>
+      {strength.gaps.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {strength.gaps.map(gap => <Tag key={gap} tone="flare">{gap}</Tag>)}
+        </div>
+      )}
+
+      {groups.length === 0 ? (
+        <p className="mt-4 text-sm text-haze">No players bought in this auction.</p>
+      ) : (
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          {groups.map(group => (
+            <div key={group.role} className="min-w-0">
+              <h3 className={cn(LABEL, 'mb-1.5 flex items-center gap-1.5')}>
+                {ROLE_META[group.role].plural}
+                <span className="tabular text-mist">{group.players.length}</span>
+              </h3>
+              <ul className="space-y-1">
+                {group.players.map(p => (
+                  <li key={p.id} className="flex items-center gap-2.5 rounded-md bg-ink-850/80 py-1.5 pl-1.5 pr-2.5">
+                    <PlayerPhoto player={p} className="size-8 shrink-0" rounded="rounded-sm" />
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-snow">{p.name}</span>
+                    <RatingBadge rating={p.rating} size="sm" />
+                    <span className="w-[4.5rem] shrink-0 text-right font-display text-sm font-semibold text-mist tabular">{formatPrice(p.bid)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           ))}
-        </ul>
-      </section>
-
-      <Footer />
-    </PageShell>
+        </div>
+      )}
+    </motion.div>
   );
 };
 

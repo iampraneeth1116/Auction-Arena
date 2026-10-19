@@ -53,6 +53,7 @@ model Room {
   overseasLimit Int
   budget        Int
   bidTimer      Int      @default(10)
+  isPublic      Boolean  @default(false) // listed in Open rooms while someone has it open
   playerOrder   Int[]
   currentIndex  Int      @default(0)
   liveState     Json?
@@ -63,8 +64,8 @@ model Room {
   roundStart    Int      @default(0) // index in playerOrder where the current round began
   createdAt     DateTime @default(now())
 
-  members      RoomMember[]
-  purchases    Purchase[]
+  members       RoomMember[]
+  purchases     Purchase[]
   messages      Message[]
   fantasySquads FantasySquad[]
   powerRanking  PowerRanking?
@@ -80,16 +81,17 @@ model PowerRanking {
 }
 
 model RoomMember {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   roomId          String
-  room            Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  room            Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
   userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   displayName     String
   teamId          String?
   budgetRemaining Int
-  isBot           Boolean  @default(false)
-  joinedAt        DateTime @default(now())
+  isBot           Boolean   @default(false)
+  hiddenAt        DateTime? // removed from this user's history; the room itself is untouched
+  joinedAt        DateTime  @default(now())
 
   purchases Purchase[]
 

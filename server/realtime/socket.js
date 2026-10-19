@@ -69,8 +69,8 @@ export function createSocketServer(httpServer) {
 
     handle('team:select', async ({ roomId, teamId }) => rooms.selectTeam(await loadRoom(roomId), user.id, teamId));
     handle('settings:update', async ({ roomId, ...settings }) => {
-      const { bidTimer, quickPool, rotateUnsold, overseasLimit } = settings;
-      return rooms.updateSettings(await loadRoom(roomId), user.id, { bidTimer, quickPool, rotateUnsold, overseasLimit });
+      const { bidTimer, isPublic, quickPool, rotateUnsold, overseasLimit } = settings;
+      return rooms.updateSettings(await loadRoom(roomId), user.id, { bidTimer, isPublic, quickPool, rotateUnsold, overseasLimit });
     });
     handle('member:kick', async ({ roomId, userId }) => rooms.kickMember(await loadRoom(roomId), user.id, userId));
     handle('bots:add', async ({ roomId, teamId }) => rooms.addBots(await loadRoom(roomId), user.id, teamId ?? null));

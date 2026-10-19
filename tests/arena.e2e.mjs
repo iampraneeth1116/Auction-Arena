@@ -1,7 +1,9 @@
 // End-to-end: the auction modes and their player pools, room options (quick pool,
-// unsold rounds, overseas limit), and bots: adding and removing them in the lobby,
-// then an auction where they bid on their own under the same rules as people.
+// unsold rounds, overseas limit), open rooms, history and the Just sold strip, and bots:
+// adding and removing them in the lobby, then an auction where they bid on their own
+// under the same rules as people.
 import { TestClient, createChecker, startServer } from './helpers.mjs';
+import { prisma } from '../server/db.js';
 import { IPL_PLAYERS } from '../src/data/players.js';
 import { RATINGS, buildPlayerOrder, isOverseas, planUnsoldRound } from '../server/auctionRules.js';
 import { pickBotXI } from '../server/bots.js';
@@ -148,6 +150,66 @@ try {
   friend.disconnect();
   host.disconnect();
 
+  // ─── Open rooms, history and the Just sold strip ───
+  const lister = await guest('Lister');
+  const shopper = await guest('Buyer');
+  const listed = (await lister.req('POST', '/api/rooms', { teamId: 'KKR', auctionType: 'sprint5', isPublic: true, bidTimer: 3 })).data.id;
+  const unlisted = (await lister.req('POST', '/api/rooms', { teamId: 'KKR', auctionType: 'sprint5', bidTimer: 3 })).data.id;
+  const openRooms = async () => (await lister.req('GET', '/api/rooms/public')).data.rooms;
+  check('a listed room nobody has open is not shown', !(await openRooms()).some(r => r.id === listed));
+  await lister.connect();
+  await lister.join(listed);
+  await lister.join(unlisted);
+  let rows = await openRooms();
+  const row = rows.find(r => r.id === listed);
+  check('a listed room with someone in it shows in open rooms', row?.status === 'waiting' && row.hostName === 'Lister' && row.humans === 1 && row.openTeams === 9, JSON.stringify(row));
+  check('an unlisted room never shows', !rows.some(r => r.id === unlisted));
+  check('open rooms name only the host', row && !('players' in row) && !('members' in row));
+  check('the room state says it is listed', (await lister.join(listed)).state.isPublic === true);
+  check('visibility must be on or off', /Invalid visibility/.test((await lister.emit('settings:update', { roomId: listed, isPublic: 'yes' })).error || ''));
+  check('the host can unlist a room', (await lister.emit('settings:update', { roomId: listed, isPublic: false })).ok && !(await openRooms()).some(r => r.id === listed));
+  await lister.emit('settings:update', { roomId: listed, isPublic: true });
+
+  // One sale in each room: only the listed room's reaches Just sold
+  for (const roomCode of [listed, unlisted]) {
+    await shopper.req('POST', `/api/rooms/${roomCode}/join`, { teamId: 'MI' });
+    await lister.emit('auction:start', { roomId: roomCode });
+  }
+  const soldIn = (roomCode) => lister.events.some(e => e.event === 'room:state' && e.payload.id === roomCode && e.payload.currentAuction?.status === 'sold');
+  const firstLot = (roomCode) => lister.events.find(e => e.event === 'room:state' && e.payload.id === roomCode && e.payload.status === 'active')?.payload;
+  await lister.waitFor(() => firstLot(listed) && firstLot(unlisted), 5000, 'both rooms live');
+  for (const roomCode of [listed, unlisted]) {
+    const state = firstLot(roomCode);
+    await lister.emit('bid:place', { roomId: roomCode, amount: IPL_PLAYERS[state.playerOrder[0]].basePrice });
+  }
+  check('both first lots sell', await eventually(lister, () => soldIn(listed) && soldIn(unlisted), 10000, 'two sales'));
+  rows = await openRooms();
+  const liveRow = rows.find(r => r.id === listed);
+  check('a live listed room shows its lot', liveRow?.status === 'active' && liveRow.lot >= 1 && liveRow.lots === firstLot(listed).playerOrder.length, JSON.stringify(liveRow));
+  const [listedSale] = await prisma.purchase.findMany({ where: { roomId: listed } });
+  const [unlistedSale] = await prisma.purchase.findMany({ where: { roomId: unlisted } });
+  const activity = (await lister.req('GET', '/api/activity')).data;
+  check('Just sold shows a sale from a listed room', activity.recentSignings.some(s => s.id === listedSale.id && s.teamId === 'KKR' && s.playerId === listedSale.playerId), JSON.stringify(activity.recentSignings.slice(0, 3)));
+  check('Just sold never shows a sale from an unlisted room', !activity.recentSignings.some(s => s.id === unlistedSale.id));
+  check('Just sold counts live auctions and names nobody', activity.liveAuctions >= 2 && activity.recentSignings.every(s => !('userName' in s) && !('roomId' in s)));
+
+  const history = async (client) => (await client.req('GET', '/api/me/history')).data.sessions;
+  const mine = await history(lister);
+  const listedSession = mine.find(s => s.roomId === listed);
+  check('history lists each auction the user ran a franchise in', listedSession?.teamId === 'KKR' && listedSession.isHost && listedSession.squad.length === 1 && mine.some(s => s.roomId === unlisted), JSON.stringify(listedSession));
+  const drifter = await guest('Drifter');
+  await drifter.req('POST', `/api/rooms/${listed}/join`, {});
+  check('joining without a franchise leaves history empty', (await history(drifter)).length === 0);
+  check('a live auction cannot be removed from history', (await lister.req('DELETE', `/api/me/history/${listedSession.id}`)).status === 409);
+  await lister.emit('auction:end', { roomId: listed });
+  await lister.emit('auction:end', { roomId: unlisted });
+  check("nobody else can remove someone's history", (await shopper.req('DELETE', `/api/me/history/${listedSession.id}`)).status === 404);
+  check('a finished auction can be removed', (await lister.req('DELETE', `/api/me/history/${listedSession.id}`)).status === 200 && !(await history(lister)).some(s => s.roomId === listed));
+  check("removing only hides it: the other manager's history keeps the room", (await history(shopper)).some(s => s.roomId === listed));
+  check('undo brings it back', (await lister.req('POST', `/api/me/history/${listedSession.id}/restore`)).status === 200 && (await history(lister)).some(s => s.roomId === listed));
+  check('a finished room leaves open rooms', !(await openRooms()).some(r => r.id === listed));
+  lister.disconnect();
+
   // A tiny quick-pool room left to run on its own while the bots play below: its
   // host buys the first player, nobody bids on the rest, so a second round should start
   const roundsHost = await guest('RoundsHost');
@@ -235,6 +297,7 @@ try {
 } catch (err) {
   check('the run finished without an error', false, err.stack);
 } finally {
+  await prisma.$disconnect();
   await server.stop();
   if (failedCount()) console.log(`\n--- server log ---\n${server.logs().slice(-3000)}`);
   printSummary();

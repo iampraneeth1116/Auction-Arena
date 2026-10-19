@@ -445,7 +445,9 @@ const AuctionRoom = () => {
         onClose={() => setOverlay(null)}
         isHost={isHost}
         bidTimer={bidTimer}
+        isPublic={currentAuction.isPublic}
         onTimer={setBidTimer}
+        onVisibility={(isPublic) => runHostAction(roomId => updateRoomSettings(roomId, { isPublic }))}
         voice={voice}
         sounds={sounds}
       />

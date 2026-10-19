@@ -53,6 +53,7 @@ function toRuntime(row) {
       overseasLimit: row.overseasLimit,
       budget: row.budget,
       bidTimer: row.bidTimer,
+      isPublic: row.isPublic,
       playerOrder: row.playerOrder,
       currentIndex: row.currentIndex,
       bannedUserIds: row.bannedUserIds,
@@ -79,6 +80,10 @@ function toRuntime(row) {
 }
 
 export const getCachedRuntime = (roomId) => runtimes.get(roomId);
+
+// Auctions this server is running right now
+export const countLiveAuctions = () =>
+  [...runtimes.values()].filter(rt => rt.room.status === 'active').length;
 
 export async function getRuntime(roomId) {
   if (typeof roomId !== 'string' || !/^[A-Z0-9]{4,12}$/.test(roomId)) return null;
@@ -136,6 +141,7 @@ export function getSnapshot(rt) {
     squadLimit: room.squadLimit,
     overseasLimit: room.overseasLimit,
     settings: { bidTimer: room.bidTimer, budget: toCrores(room.budget) },
+    isPublic: room.isPublic,
     playerOrder: room.playerOrder,
     currentIndex: room.currentIndex,
     bannedPlayers: room.bannedUserIds,
@@ -533,7 +539,7 @@ function checkOverseasLimit(limit, squadLimit) {
 
 // The host creates the room and claims a franchise in one step. bidTimer and
 // overseasLimit are optional: without them the mode's own values apply.
-export async function createRoom({ user, teamId, auctionType, quickPool = false, rotateUnsold = true, bidTimer, overseasLimit }) {
+export async function createRoom({ user, teamId, auctionType, isPublic = false, quickPool = false, rotateUnsold = true, bidTimer, overseasLimit }) {
   const mode = AUCTION_MODES[auctionType];
   if (!mode) throw new HttpError(400, 'Unknown auction mode');
   if (!TEAMS_BY_ID.has(teamId)) throw new HttpError(400, 'Unknown franchise');
@@ -551,6 +557,7 @@ export async function createRoom({ user, teamId, auctionType, quickPool = false,
           overseasLimit: overseasLimit ?? mode.overseasLimit,
           budget: mode.budgetLakhs,
           bidTimer: bidTimer ?? mode.bidTimer ?? DEFAULT_BID_TIMER,
+          isPublic,
           quickPool,
           rotateUnsold,
           playerOrder: [],
@@ -622,6 +629,7 @@ export function selectTeam(rt, userId, teamId) {
 // Room settings the host can change; anything left out keeps its current value
 export function updateSettings(rt, userId, {
   bidTimer = rt.room.bidTimer,
+  isPublic = rt.room.isPublic,
   quickPool = rt.room.quickPool,
   rotateUnsold = rt.room.rotateUnsold,
   overseasLimit = rt.room.overseasLimit,
@@ -631,6 +639,7 @@ export function updateSettings(rt, userId, {
     if (!Number.isInteger(bidTimer) || bidTimer < MIN_BID_TIMER || bidTimer > MAX_BID_TIMER) {
       throw new HttpError(400, `Bid timer must be between ${MIN_BID_TIMER} and ${MAX_BID_TIMER} seconds`);
     }
+    if (typeof isPublic !== 'boolean') throw new HttpError(400, 'Invalid visibility');
     if (typeof quickPool !== 'boolean') throw new HttpError(400, 'Invalid pool setting');
     if (typeof rotateUnsold !== 'boolean') throw new HttpError(400, 'Invalid unsold setting');
     checkOverseasLimit(overseasLimit, rt.room.squadLimit);
@@ -643,8 +652,8 @@ export function updateSettings(rt, userId, {
     if (overseasLimit !== rt.room.overseasLimit && rt.room.status !== 'waiting') {
       throw new HttpError(409, 'The overseas limit is fixed once the auction starts');
     }
-    await prisma.room.update({ where: { id: rt.room.id }, data: { bidTimer, quickPool, rotateUnsold, overseasLimit } });
-    Object.assign(rt.room, { bidTimer, quickPool, rotateUnsold, overseasLimit });
+    await prisma.room.update({ where: { id: rt.room.id }, data: { bidTimer, isPublic, quickPool, rotateUnsold, overseasLimit } });
+    Object.assign(rt.room, { bidTimer, isPublic, quickPool, rotateUnsold, overseasLimit });
     broadcast(rt);
   });
 }
@@ -854,4 +863,34 @@ export async function sendChat(rt, userId, { text, type }) {
 
   rt.lastChatAt.set(userId, now);
   await addMessage(rt, { userId, userName: member.displayName, type, text: content });
+}
+
+// ─── Open rooms ───
+
+// Listed rooms someone has open right now. Rooms nobody has open aren't in memory,
+// so a lobby whose host walked away drops off the list by itself. Only the host's
+// name is shown, never the other managers'.
+export function listPublicRooms() {
+  return [...runtimes.values()]
+    .filter(rt => rt.room.isPublic && rt.room.status !== 'completed')
+    .filter(rt => rt.room.status === 'active' || rt.presence.size > 0)
+    .map(rt => {
+      const managers = [...rt.members.values()].filter(m => m.teamId);
+      return {
+        id: rt.room.id,
+        status: rt.room.status,
+        auctionType: rt.room.auctionType,
+        hostName: rt.members.get(rt.room.hostId)?.displayName ?? 'Host',
+        humans: managers.filter(m => !m.isBot).length,
+        bots: managers.filter(m => m.isBot).length,
+        openTeams: TEAMS_BY_ID.size - managers.length,
+        spectators: countSpectators(rt),
+        lot: rt.room.status === 'active' ? rt.room.currentIndex + 1 : null,
+        lots: rt.room.playerOrder.length || null,
+        createdAt: rt.room.createdAt.getTime(),
+      };
+    })
+    // Lobbies still taking players first, newest first within each group
+    .sort((a, b) => (a.status === b.status ? b.createdAt - a.createdAt : a.status === 'waiting' ? -1 : 1))
+    .slice(0, 50);
 }

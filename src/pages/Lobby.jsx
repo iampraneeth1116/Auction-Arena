@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Bot, BotOff, Check, Copy, Crown, Eye, Gavel, Hourglass, House, Loader2, MessageSquare, Plane, RotateCw, SearchX, ShieldX, Timer, TrendingUp, UserMinus, UserPlus, UserRound, Users, Wallet } from 'lucide-react';
+import {
+  Bot, BotOff, Check, Copy, Crown, Eye, Gavel, Globe, Hourglass, House, Loader2, Lock, MessageCircle, MessageSquare, Plane, RotateCw,
+  SearchX, Share2, ShieldX, Timer, TrendingUp, UserMinus, UserPlus, UserRound, Users, Wallet,
+} from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useAuction } from '../hooks/useAuction';
 import { useToast } from '../hooks/useToast';
@@ -90,7 +93,7 @@ const SignInGate = ({ roomCode, watching }) => (
 
 // ─── Lobby sections ───
 
-const RoomHeader = ({ room, roomCode, isHost, hostName, managedCount, onlineCount, copied, onCopy }) => {
+const RoomHeader = ({ room, roomCode, isHost, hostName, managedCount, onlineCount, copied, onCopy, whatsappHref, canShare, onShare }) => {
   const mode = MODE_META[room.auctionType];
   return (
     <Panel as={motion.section} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} accent="signal" aria-label={`Room ${roomCode}`}>
@@ -101,14 +104,21 @@ const RoomHeader = ({ room, roomCode, isHost, hostName, managedCount, onlineCoun
             <span className="clip-slant-r bg-signal py-0.5 pl-2.5 pr-6 font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-950">
               Lobby
             </span>
+            <Tag tone={room.isPublic ? 'signal' : 'neutral'} icon={room.isPublic ? Globe : Lock}>
+              {room.isPublic ? 'Public' : 'Private'}
+            </Tag>
             <Tag icon={Eye}>{room.spectatorCount ?? 0} watching</Tag>
           </div>
           <p className={cn(labelClasses, 'mt-4')}>Room code</p>
           <h1 className="tabular font-display text-5xl font-bold leading-none tracking-[0.14em] text-snow sm:text-7xl">{roomCode}</h1>
-          <div className="mt-4">
+          <div className="mt-4 flex flex-wrap gap-2">
             <Button variant="outline" size="sm" icon={copied ? Check : Copy} onClick={onCopy}>
               {copied ? 'Copied' : 'Copy invite link'}
             </Button>
+            <a href={whatsappHref} target="_blank" rel="noreferrer" className={buttonClasses({ variant: 'outline', size: 'sm' })}>
+              <MessageCircle size={16} strokeWidth={2.5} /> WhatsApp
+            </a>
+            {canShare && <Button variant="ghost" size="sm" icon={Share2} onClick={onShare}>Share</Button>}
           </div>
         </div>
 
@@ -237,7 +247,7 @@ const FranchiseTile = ({ team, holder, mine, hasTeam, isHost, busy, onPick, onAd
 };
 
 const WaitingPanel = ({ isHost, hostName, myTeam }) => (
-  <Panel label={isHost ? 'Your room' : 'Up next'} bodyClassName="space-y-4 p-4">
+  <Panel label={isHost ? 'Your room' : 'Up next'} className="order-2" bodyClassName="space-y-4 p-4">
     <div className="flex items-center gap-3">
       <span className="flex size-11 shrink-0 items-center justify-center rounded-md border border-signal/30 bg-signal/10 text-signal">
         <Hourglass size={20} className="animate-pulse" />
@@ -262,11 +272,11 @@ const WaitingPanel = ({ isHost, hostName, myTeam }) => (
 );
 
 const HostControls = ({
-  room, busy, managedCount, openCount, botCount, canStart, onStart, onFillBots, onClearBots, onTimer, onQuickPool, onRotate, onOverseas,
+  room, busy, managedCount, openCount, botCount, canStart, onStart, onFillBots, onClearBots, onTimer, onListed, onQuickPool, onRotate, onOverseas,
 }) => {
   const bidTimer = room.settings?.bidTimer;
   return (
-    <Panel label="Host controls" accent="signal" bodyClassName="divide-y divide-white/6">
+    <Panel label="Host controls" accent="signal" className="order-2" bodyClassName="divide-y divide-white/6">
       <div className="space-y-2 p-4">
         <Button variant="volt" size="lg" slant block icon={Gavel} loading={busy === 'start'} disabled={!canStart || Boolean(busy)} onClick={onStart}>
           Start auction
@@ -325,6 +335,14 @@ const HostControls = ({
       </div>
       <div className="p-4">
         <Toggle
+          checked={Boolean(room.isPublic)}
+          onChange={onListed}
+          disabled={Boolean(busy)}
+          label="Listed in open rooms"
+          description="Anyone signed in can find this room on the home page to join or watch."
+        />
+        <Toggle
+          className="mt-4"
           checked={Boolean(room.quickPool)}
           onChange={onQuickPool}
           disabled={Boolean(busy)}
@@ -366,6 +384,7 @@ const MembersPanel = ({ players, uid, isHost, spectatorCount, onKick }) => {
     <Panel
       label="In the room"
       actions={<span className="tabular text-xs text-haze">{people === 1 ? '1 person' : `${people} people`} · {bots === 1 ? '1 bot' : `${bots} bots`}</span>}
+      className="order-3"
     >
       <ul className="max-h-96 divide-y divide-white/6 overflow-y-auto scrollbar-thin">
         {ordered.map((p) => {
@@ -432,7 +451,7 @@ const RulesPanel = ({ room }) => {
     { icon: Users, label: 'Unsold', text: room.rotateUnsold === false ? 'Out once unsold' : 'Come back in later rounds' },
   ];
   return (
-    <Panel label="Rules" bodyClassName="grid grid-cols-1 gap-2 p-3 sm:grid-cols-2 xl:grid-cols-3">
+    <Panel label="Rules" className="order-5" bodyClassName="grid grid-cols-1 gap-2 p-3 sm:grid-cols-2 xl:grid-cols-3">
       {rules.map(({ icon: Icon, label, text }) => (
         <div key={label} className="flex items-start gap-3 rounded-md border border-white/6 bg-ink-900/50 p-3">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-signal/10 text-signal">
@@ -592,6 +611,13 @@ const Lobby = () => {
   const setOverseas = (overseasLimit) => run('overseas', () => updateRoomSettings(roomCode, { overseasLimit }));
 
   const setBidTimer = (bidTimer) => run(`timer:${bidTimer}`, () => updateRoomSettings(roomCode, { bidTimer }));
+  const setListed = (isPublic) =>
+    run('listed', () => updateRoomSettings(roomCode, { isPublic }), () => {
+      toast({
+        message: isPublic ? 'Your room is listed in open rooms' : 'Your room is private. Only people with the link can join.',
+        tone: 'success',
+      });
+    });
 
   const confirmKick = () => {
     const target = kickTarget;
@@ -602,15 +628,29 @@ const Lobby = () => {
     });
   };
 
+  const inviteLink = `${window.location.origin}/lobby/${roomCode}`;
+  const whatsappHref = `https://wa.me/?text=${encodeURIComponent(`Join my Auction Arena room ${roomCode}: ${inviteLink}`)}`;
+  const canShare = typeof navigator.share === 'function';
+
   const copyLink = async () => {
     try {
-      await navigator.clipboard.writeText(`${window.location.origin}/lobby/${roomCode}`);
+      await navigator.clipboard.writeText(inviteLink);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
       toast({ message: "Couldn't copy the link. Share the room code instead.", tone: 'error' });
     }
   };
+
+  const shareLink = async () => {
+    try {
+      await navigator.share({ title: 'Auction Arena', text: `Join my auction room ${roomCode}`, url: inviteLink });
+    } catch (err) {
+      if (err?.name !== 'AbortError') toast({ message: "Couldn't open sharing. Copy the link instead.", tone: 'error' });
+    }
+  };
+
+  const scrollToBoard = () => document.getElementById('franchise-board')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   // ─── Gates ───
 
@@ -669,7 +709,7 @@ const Lobby = () => {
   };
 
   return (
-    <PageShell wide className="pb-12 pt-4 sm:pt-6">
+    <PageShell wide className="pb-28 pt-4 sm:pt-6 lg:pb-12">
       {spectatorView && (
         <div className="mb-4 flex flex-col gap-3 rounded-lg border border-signal/30 bg-signal/[0.07] p-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
           <div className="flex items-start gap-3 sm:items-center">
@@ -691,13 +731,19 @@ const Lobby = () => {
         onlineCount={onlineCount}
         copied={copied}
         onCopy={copyLink}
+        whatsappHref={whatsappHref}
+        canShare={canShare}
+        onShare={shareLink}
       />
 
+      {/* Phones: one column in the order you need it. Desktop: board and rules | controls, people and chat */}
       <div className="mt-4 flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,400px)] lg:items-start">
-        <div className="flex flex-col gap-4">
+        <div className="contents lg:flex lg:flex-col lg:gap-4">
           <Panel
+            id="franchise-board"
             label="Franchises"
             actions={<span className="tabular text-xs text-haze">{TEAM_COUNT - managedCount} open</span>}
+            className="order-1 scroll-mt-20"
             bodyClassName="p-3 sm:p-4"
           >
             {!myTeamId && !spectatorView && (
@@ -734,7 +780,7 @@ const Lobby = () => {
           <RulesPanel room={room} />
         </div>
 
-        <div className="flex flex-col gap-4">
+        <div className="contents lg:flex lg:flex-col lg:gap-4">
           <WaitingPanel isHost={isHost} hostName={hostName} myTeam={myTeam} />
           {isHost && (
             <HostControls
@@ -748,22 +794,58 @@ const Lobby = () => {
               onFillBots={fillWithBots}
               onClearBots={clearBots}
               onTimer={setBidTimer}
+              onListed={setListed}
               onQuickPool={setQuickPool}
               onRotate={setRotate}
               onOverseas={setOverseas}
             />
           )}
           <MembersPanel players={players} uid={uid} isHost={isHost} spectatorCount={room.spectatorCount ?? 0} onKick={setKickTarget} />
-          <Panel label="Room chat" actions={<MessageSquare size={14} className="text-haze" aria-hidden />} bodyClassName="h-[420px]">
+          <Panel label="Room chat" actions={<MessageSquare size={14} className="text-haze" aria-hidden />} className="order-4" bodyClassName="h-[420px]">
             <TextChat roomId={roomCode} canChat={Boolean(me)} />
           </Panel>
+        </div>
+      </div>
+
+      {/* Phones: your franchise and the next step stay in reach */}
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-white/8 bg-ink-950/90 backdrop-blur-md lg:hidden">
+        <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 pb-[calc(0.625rem+env(safe-area-inset-bottom))] pt-2.5">
+          {spectatorView ? (
+            <span className="flex min-w-0 flex-1 items-center gap-2 text-sm text-mist">
+              <Eye size={16} className="shrink-0 text-signal" aria-hidden /> Watching
+            </span>
+          ) : (
+            <button type="button" onClick={scrollToBoard} className="flex min-w-0 flex-1 items-center gap-2.5 text-left cursor-pointer">
+              <TeamCrest teamId={myTeam?.id} size="sm" />
+              <span className="min-w-0">
+                <span className={cn(labelClasses, 'block text-[10px]')}>Your franchise</span>
+                <span className={cn('block truncate font-display text-sm font-semibold uppercase tracking-wide', myTeam ? 'text-snow' : allTakenByPeople ? 'text-mist' : 'text-signal')}>
+                  {myTeam ? myTeam.name : allTakenByPeople ? 'All taken' : 'Pick one'}
+                </span>
+              </span>
+            </button>
+          )}
+
+          {spectatorView ? (
+            <Button variant="primary" size="md" icon={UserPlus} loading={busy === 'join'} disabled={Boolean(busy)} onClick={joinAsManager}>
+              Join
+            </Button>
+          ) : isHost ? (
+            <Button variant="volt" size="md" slant icon={Gavel} loading={busy === 'start'} disabled={!canStart || Boolean(busy)} onClick={requestStart}>
+              Start
+            </Button>
+          ) : (
+            <span className="flex shrink-0 items-center gap-1.5 text-xs text-haze">
+              <Hourglass size={14} className="animate-pulse text-signal" aria-hidden /> Waiting for host
+            </span>
+          )}
         </div>
       </div>
 
       <ConfirmDialog
         open={confirmStart}
         title={`Start with ${managedCount} franchises?`}
-        message={`${TEAM_COUNT - managedCount} franchise${TEAM_COUNT - managedCount === 1 ? ' has' : 's have'} no manager and won't take part in this auction.`}
+        message={`${TEAM_COUNT - managedCount} franchise${TEAM_COUNT - managedCount === 1 ? ' has' : 's have'} no manager and won't take part in this auction. To play all ${TEAM_COUNT}, cancel and use “Fill empty with bots” first.`}
         confirmLabel="Start anyway"
         tone="primary"
         busy={busy === 'start'}

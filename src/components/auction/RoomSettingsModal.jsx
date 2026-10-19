@@ -16,7 +16,7 @@ const Slider = ({ label, value, min, max, step, onChange, format }) => (
 );
 
 // Room settings for the host, and sound/voice settings for this browser
-const RoomSettingsModal = ({ open, onClose, isHost, bidTimer, onTimer, voice, sounds }) => (
+const RoomSettingsModal = ({ open, onClose, isHost, bidTimer, isPublic, onTimer, onVisibility, voice, sounds }) => (
   <Modal open={open} onClose={onClose} title="Settings">
     <div className="space-y-6">
       {isHost && (
@@ -37,6 +37,7 @@ const RoomSettingsModal = ({ open, onClose, isHost, bidTimer, onTimer, voice, so
               ))}
             </div>
           </div>
+          <Toggle checked={Boolean(isPublic)} onChange={onVisibility} label="Listed in open rooms" description="Anyone signed in can find this auction on the home page and watch it." />
         </section>
       )}
 
