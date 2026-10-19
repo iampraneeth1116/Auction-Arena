@@ -19,7 +19,7 @@ export default defineConfig([
     },
   },
   {
-    files: ['server/**/*.js', 'tests/**/*.mjs', '*.config.js'],
+    files: ['server/**/*.js', 'scripts/**/*.js', 'tests/**/*.mjs', '*.config.js'],
     extends: [js.configs.recommended],
     languageOptions: { ecmaVersion: 'latest', sourceType: 'module', globals: globals.node },
     rules: {

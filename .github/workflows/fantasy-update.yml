@@ -1,0 +1,43 @@
+name: Daily fantasy points
+
+on:
+  schedule:
+    # 02:30 UTC (08:00 IST) every day from March to June, while the IPL is on
+    - cron: '30 2 * 3-6 *'
+  workflow_dispatch: # run it by hand from the Actions tab
+
+jobs:
+  update-points:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      CRICKET_API_KEY: ${{ secrets.CRICKET_API_KEY }}
+    steps:
+      # Without the secrets there's nothing to fetch: finish quietly instead of failing
+      - name: Check secrets
+        id: secrets
+        run: |
+          if [ -z "$DATABASE_URL" ] || [ -z "$CRICKET_API_KEY" ]; then
+            echo "::notice::Skipped: add DATABASE_URL and CRICKET_API_KEY under Settings → Secrets and variables → Actions."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v5
+        if: steps.secrets.outputs.ready == 'true'
+
+      - uses: actions/setup-node@v5
+        if: steps.secrets.outputs.ready == 'true'
+        with:
+          node-version-file: '.node-version'
+          cache: 'npm'
+
+      # postinstall runs `prisma generate`
+      - name: Install dependencies
+        if: steps.secrets.outputs.ready == 'true'
+        run: npm ci
+
+      - name: Score finished matches
+        if: steps.secrets.outputs.ready == 'true'
+        run: npm run fantasy:update

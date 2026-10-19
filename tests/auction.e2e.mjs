@@ -4,6 +4,7 @@
 import { TestClient, createChecker, startServer } from './helpers.mjs';
 import { prisma } from '../server/db.js';
 import { IPL_PLAYERS } from '../src/data/players.js';
+import { calculatePoints, collectMatchPlayers, findPlayer, saveMatch } from '../scripts/lib/fantasyScoring.js';
 
 const PORT = 3099;
 // Keep Google sign-in unconfigured for this run, whatever .env contains
@@ -238,6 +239,27 @@ try {
   check('fantasy player stats load', (await host.req('GET', '/api/fantasy/player-stats')).status === 200);
   check('admin endpoints are forbidden for everyone else', (await host.req('POST', `/api/admin/player-stats/${fullIds[0]}/match`, { points: 10 })).status === 403);
   check('me says a guest is not an admin', (await host.req('GET', '/api/auth/me')).data.user.isAdmin === false);
+
+  // ─── Fantasy scoring (the scripts' shared library) ───
+  // 52 off 30 with 4 fours and 2 sixes, caught: 52 + 16 + 12 + 8 (fifty) + 6 (SR 173) + 4 (in the XI)
+  check('an innings scores as the rules say', calculatePoints({ batting: { r: 52, b: 30, fours: 4, sixes: 2, dismissal: 'caught' }, announced: true }, 'Batsman').points === 98);
+  // 4-0-24-3 with 10 dots and an LBW: 10 + 90 + 8 + 4 (3 wickets) + 2 (economy 6) + 4 (in the XI)
+  check('a spell scores as the rules say', calculatePoints({ bowling: { w: 3, m: 0, r: 24, o: 4, dot: 10, lbw_bowled: 1 }, announced: true }, 'Bowler').points === 118);
+  check('a bowler is not docked for a duck', calculatePoints({ batting: { r: 0, b: 2, dismissal: 'bowled' } }, 'Bowler').points === 0);
+  check('CricAPI spellings map to our players', findPlayer('philipsalt')?.name === 'Phil Salt' && findPlayer('mohammedsiraj')?.name === 'Mohammad Siraj' && findPlayer('nobodyatall') === null);
+  const scorecard = { scorecard: [{ batting: [{ batsman: { name: 'Virat Kohli' }, r: 52, b: 30, fours: 4, sixes: 2, dismissal: 'caught' }], bowling: [{ bowler: { name: 'Jasprit Bumrah' }, w: 3, m: 0, r: 24, o: 4, dot: 10, lbw_bowled: 1 }] }] };
+  const matchPlayers = collectMatchPlayers(scorecard, [{ name: 'Virat Kohli' }, { name: 'Jasprit Bumrah' }, { name: 'Shubman Gill' }, { name: 'Not A Real Player' }]);
+  check('everyone in the XI is collected, even without a score', Object.keys(matchPlayers).length === 4 && matchPlayers.shubmangill?.announced === true);
+  const kohli = IPL_PLAYERS.find(p => p.name === 'Virat Kohli');
+  const statBefore = (await prisma.playerStat.findUnique({ where: { playerId: kohli.id } })) ?? { totalPoints: 0, matches: 0 };
+  const match = { id: `test-${ts}`, name: `Test match ${ts}` };
+  const saved1 = await saveMatch(prisma, match, matchPlayers);
+  check('a match is saved with unknown names reported', saved1.matched === 3 && saved1.unmapped.join() === 'notarealplayer', JSON.stringify(saved1));
+  const statAfter = await prisma.playerStat.findUnique({ where: { playerId: kohli.id } });
+  check("the player's running total goes up by the match points", statAfter.totalPoints - statBefore.totalPoints === 98 && statAfter.matches - statBefore.matches === 1);
+  const again = await saveMatch(prisma, match, matchPlayers).then(() => 'saved', () => 'refused');
+  const statAgain = await prisma.playerStat.findUnique({ where: { playerId: kohli.id } });
+  check('the same match is never counted twice', again === 'refused' && statAgain.totalPoints === statAfter.totalPoints && statAgain.matches === statAfter.matches);
   for (const client of [host, full, abroad, skint]) client.disconnect();
 } catch (err) {
   check('the run finished without an error', false, err.stack);

@@ -151,3 +151,31 @@ model PlayerStat {
   matches     Int      @default(0)
   updatedAt   DateTime @updatedAt
 }
+
+// One player's fantasy points in one real match, with the breakdown
+model PlayerMatchPoint {
+  id         String   @id @default(cuid())
+  playerId   String
+  playerName String
+  matchId    String
+  matchName  String
+  points     Float
+  details    Json
+  updatedAt  DateTime @updatedAt
+
+  @@unique([playerId, matchId])
+}
+
+// Matches already scored, so a re-run never counts one twice
+model ProcessedMatch {
+  matchId     String   @id
+  name        String
+  processedAt DateTime @default(now())
+}
+
+// Small key/value settings, e.g. where the daily fantasy update got to
+model AppConfig {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
