@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import {
-  ArrowRight, Bot, Check, ChevronDown, CircleAlert, Clock, Eye, Gavel, History, LogIn, Radar, RefreshCw, Search, Trash2, Users,
+  ArrowRight, BookOpen, Bot, Check, ChevronDown, CircleAlert, Clock, Eye, Gavel, History, LogIn, Radar, RefreshCw, Search, Timer, Trash2,
+  Trophy, Users,
 } from 'lucide-react';
 import PageShell from '../components/ui/PageShell';
 import Panel from '../components/ui/Panel';
@@ -28,14 +29,14 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useAuction } from '../hooks/useAuction';
 import { api } from '../lib/api';
 import { cn } from '../lib/cn';
-import { TEAMS_BY_ID, auctionPoolSize, ratingOf, teamStrength, withPlayer } from '../lib/catalog';
-import { BID_TIMER_PRESETS, MODE_META, ROLES, ROLE_META, formatPrice, overseasLimitLabel } from '../lib/format';
+import { PLAYERS_BY_ID, TEAMS_BY_ID, auctionPoolSize, ratingOf, teamStrength, withPlayer } from '../lib/catalog';
+import { BID_TIMER_PRESETS, MODE_META, ROLES, ROLE_META, formatPrice, isOverseas, nextBid, overseasLimitLabel } from '../lib/format';
 import { TEAMS } from '../data/teams';
-import { IPL_PLAYERS } from '../data/players';
 
 const LABEL = 'font-display text-xs font-semibold uppercase tracking-[0.14em] text-haze';
 const MODES = ['mega', 'sprint11', 'sprint5', 'blitz5'];
 const POLL_MS = 20000;
+const PLAYER_COUNT = `${Math.floor(PLAYERS_BY_ID.size / 100) * 100}+`;
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -58,54 +59,263 @@ const LandingPage = () => {
   return user ? <ControlRoom /> : <SignedOut />;
 };
 
-// ─── Signed out ───
-
-// The five highest Arena Ratings, as a taste of the player list
-const TOP_RATED = [...IPL_PLAYERS].sort((a, b) => ratingOf(b.id) - ratingOf(a.id)).slice(0, 5);
+// ─── Signed out: what this is, a sample lot, and how to get in ───
 
 const SignedOut = () => (
-  <PageShell>
+  <PageShell
+    right={
+      <Link to="/guide" className={buttonClasses({ variant: 'ghost', size: 'sm' })}>
+        <BookOpen size={15} /> How to play
+      </Link>
+    }
+  >
     <AuctionActivityFeed className="mt-4" />
 
-    <section className="grid items-center gap-10 py-12 sm:py-16 lg:grid-cols-[minmax(0,1fr)_24rem]">
-      <div className="space-y-5">
-        <Tag tone="signal">Live IPL auction game</Tag>
-        <h1 className="font-display text-5xl font-extrabold uppercase leading-none sm:text-7xl">
-          Run the IPL auction
-          <br />
-          <span className="text-signal">with your friends</span>
-        </h1>
-        <p className="max-w-xl text-lg text-mist">
-          Claim a franchise, bid live against each other on {IPL_PLAYERS.length} real players, and see who builds the
-          best squad.
+    <section className="grid items-center gap-10 pb-12 pt-8 sm:pt-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:gap-14 lg:pb-16">
+      <div className="min-w-0">
+        <p className="flex items-center gap-2 font-display text-xs font-semibold uppercase tracking-[0.18em] text-signal">
+          <span className="h-3.5 w-1 -skew-x-12 bg-signal" aria-hidden />
+          Live IPL auction game
         </p>
-        <div className="flex flex-wrap gap-2" aria-label="The ten franchises">
-          {TEAMS.map(team => (
-            <TeamCrest key={team.id} teamId={team.id} size="md" />
+        <h1 className="mt-3 font-display text-[2.5rem] font-bold uppercase leading-[0.95] tracking-wide text-snow sm:text-6xl">
+          Run the IPL auction
+          <span className="block text-signal">with your friends</span>
+        </h1>
+        <p className="mt-4 max-w-xl text-base leading-relaxed text-mist sm:text-lg">
+          Friends claim IPL franchises and bid live on {PLAYER_COUNT} real players, with bots filling any empty teams.
+          Afterwards, AI power rankings grade every squad and your team plays on in a fantasy league.
+        </p>
+        <dl className="mt-5 grid max-w-md grid-cols-3 gap-2 sm:flex sm:max-w-none sm:flex-wrap">
+          {[
+            [PLAYER_COUNT, 'Players'],
+            [TEAMS.length, 'Franchises'],
+            [MODES.length, 'Formats'],
+          ].map(([value, label]) => (
+            <div key={label} className="flex flex-col rounded-md border border-white/8 bg-ink-900/60 px-3 py-1.5 sm:flex-row sm:items-baseline sm:gap-1.5">
+              <dt className={LABEL}>{label}</dt>
+              <dd className="order-first font-display text-lg font-bold tabular text-snow">{value}</dd>
+            </div>
           ))}
-        </div>
+        </dl>
+
+        <Panel label="Start playing" accent="signal" className="mt-8 max-w-lg" bodyClassName="p-4 sm:p-5">
+          <SignInOptions />
+        </Panel>
       </div>
 
-      <Panel label="Start playing" accent="signal" className="w-full max-w-md" bodyClassName="p-4 sm:p-5">
-        <SignInOptions />
-      </Panel>
+      <LotCard />
     </section>
 
-    <section>
-      <h2 className="mb-3 font-display text-sm font-semibold uppercase tracking-[0.16em] text-haze">Top rated</h2>
-      <ul className="grid gap-2 sm:grid-cols-5">
-        {TOP_RATED.map(player => (
-          <li key={player.id} className="flex items-center gap-3 rounded-md border border-white/8 bg-ink-850/80 p-2">
-            <PlayerPhoto player={player} className="size-10 shrink-0" />
-            <span className="min-w-0 flex-1 truncate text-sm font-semibold">{player.name}</span>
-            <RatingBadge rating={ratingOf(player.id)} size="sm" />
-          </li>
-        ))}
-      </ul>
-    </section>
-
+    <HowItWorks />
     <Footer />
   </PageShell>
+);
+
+// A sample lot that plays on a loop, drawn like the live auction graphic
+const BIDS_PER_LOT = 5;
+const CALL_TICKS = 2; // "going once", "going twice"
+const SOLD_TICKS = 2;
+const CYCLE = BIDS_PER_LOT + CALL_TICKS + SOLD_TICKS;
+const TICK_MS = 1500;
+
+const bidLadder = (opening) => {
+  const bids = [opening];
+  while (bids.length < BIDS_PER_LOT) bids.push(nextBid(bids[bids.length - 1], opening));
+  return bids;
+};
+
+const SAMPLE_LOTS = (() => {
+  const lots = [
+    { playerId: 'p_142', lot: 7, opening: 16.5, bidders: ['RCB', 'MI', 'CSK'] },
+    { playerId: 'p_621', lot: 12, opening: 14.75, bidders: ['MI', 'GT', 'KKR'] },
+    { playerId: 'p_105', lot: 18, opening: 10.5, bidders: ['SRH', 'DC', 'LSG'] },
+    { playerId: 'p_125', lot: 23, opening: 11.25, bidders: ['GT', 'RR', 'PBKS'] },
+  ]
+    .map(lot => ({ ...lot, player: PLAYERS_BY_ID.get(lot.playerId) }))
+    .filter(lot => lot.player);
+  if (lots.length === 0) {
+    const player = PLAYERS_BY_ID.values().next().value;
+    lots.push({ playerId: player.id, lot: 1, opening: player.basePrice, bidders: ['MI', 'CSK', 'RCB'], player });
+  }
+  return lots.map(lot => ({ ...lot, bids: bidLadder(lot.opening) }));
+})();
+
+// Where the timer bar starts and ends in each phase of a lot
+const timerFor = (phase) => {
+  if (phase < BIDS_PER_LOT) return { from: 1, to: 0.62, tone: 'bg-signal', call: 'Bidding', callTone: 'text-mist' };
+  if (phase === BIDS_PER_LOT) return { from: 0.62, to: 0.3, tone: 'bg-gold', call: 'Going once', callTone: 'text-gold' };
+  if (phase === BIDS_PER_LOT + 1) return { from: 0.3, to: 0, tone: 'bg-flare', call: 'Going twice', callTone: 'text-flare' };
+  return { from: 0, to: 0, tone: 'bg-volt', call: 'Sold', callTone: 'text-volt' };
+};
+
+const LotCard = () => {
+  const reduceMotion = useReducedMotion();
+  const [tick, setTick] = useState(2);
+
+  useEffect(() => {
+    if (reduceMotion) return undefined;
+    const timer = setInterval(() => setTick(t => t + 1), TICK_MS);
+    return () => clearInterval(timer);
+  }, [reduceMotion]);
+
+  const lot = SAMPLE_LOTS[Math.floor(tick / CYCLE) % SAMPLE_LOTS.length];
+  const phase = tick % CYCLE;
+  const step = Math.min(phase, BIDS_PER_LOT - 1);
+  const sold = phase >= BIDS_PER_LOT + CALL_TICKS;
+  const bid = lot.bids[step];
+  const leaderId = lot.bidders[step % lot.bidders.length];
+  const leader = TEAMS_BY_ID.get(leaderId);
+  const { player } = lot;
+  const [firstName, ...rest] = player.name.split(' ');
+  const timer = timerFor(phase);
+
+  return (
+    <div
+      className="relative mx-auto w-full max-w-md lg:max-w-none"
+      role="img"
+      aria-label="Example lot: a player on the block with the current bid, the leading team and the countdown"
+    >
+      {/* Offset plate behind the card */}
+      <div className="absolute inset-0 translate-x-2.5 translate-y-2.5 rounded-lg border border-signal/25 bg-stripes" aria-hidden />
+
+      <div className="relative overflow-hidden rounded-lg border border-white/10 bg-ink-850 shadow-2xl shadow-black/50">
+        <div className="flex items-center justify-between gap-3 border-b border-white/6 bg-ink-900 pr-3">
+          <span className="clip-slant-r flex h-8 items-center gap-2 bg-signal pl-3 pr-6 font-display text-xs font-bold uppercase tracking-[0.16em] text-ink-950">
+            <Gavel size={13} strokeWidth={2.5} /> On the block
+          </span>
+          <span className="truncate font-display text-xs font-semibold uppercase tracking-[0.14em] text-haze tabular">
+            Lot {lot.lot} · {player.set}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-[7.5rem_minmax(0,1fr)] gap-4 p-4 sm:grid-cols-[9.5rem_minmax(0,1fr)]">
+          <div
+            className="relative aspect-[4/5] overflow-hidden rounded-md border border-white/8 transition-colors"
+            style={{ background: `linear-gradient(160deg, ${leader?.colors.primary ?? '#25335c'}99, #0a0f1f 85%)` }}
+          >
+            <div className="absolute inset-0 bg-stripes" aria-hidden />
+            <PlayerPhoto player={player} className="absolute inset-0 size-full bg-transparent!" rounded="rounded-none" />
+          </div>
+
+          <div className="flex min-w-0 flex-col">
+            <div className="flex flex-wrap gap-1.5">
+              <Tag>{ROLE_META[player.role]?.short ?? player.role}</Tag>
+              <Tag tone={isOverseas(player) ? 'gold' : 'neutral'}>{isOverseas(player) ? 'Overseas' : 'India'}</Tag>
+            </div>
+            <p className="mt-2.5 font-display text-2xl font-bold uppercase leading-[0.95] tracking-wide text-mist sm:text-3xl">
+              {firstName}
+              <span className="block truncate text-snow">{rest.join(' ')}</span>
+            </p>
+            <div className="mt-auto flex items-center gap-2.5 pt-3">
+              <RatingBadge rating={ratingOf(player.id)} size="lg" />
+              <span className="font-display text-[11px] font-semibold uppercase leading-tight tracking-[0.14em] text-haze">
+                Arena
+                <br />
+                Rating
+              </span>
+            </div>
+            <p className="mt-2 text-xs text-haze">
+              Base price <span className="font-display font-semibold tabular text-mist">{formatPrice(player.basePrice)}</span>
+            </p>
+          </div>
+        </div>
+
+        <div className="border-t border-white/6 bg-ink-900/70 px-4 pb-4 pt-3">
+          <div className="flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              <div className={LABEL}>{sold ? `Sold to ${leaderId}` : 'Current bid'}</div>
+              <motion.div
+                key={`${lot.playerId}-${bid}-${sold}`}
+                initial={reduceMotion ? false : { y: 8, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ duration: 0.2 }}
+                className={cn('font-display text-4xl font-bold leading-none tabular', sold ? 'text-volt' : 'text-snow')}
+              >
+                {formatPrice(bid)}
+              </motion.div>
+            </div>
+
+            {sold ? (
+              <span className="clip-slant bg-volt px-6 py-1.5 font-display text-2xl font-extrabold uppercase tracking-[0.14em] text-ink-950">
+                Sold
+              </span>
+            ) : (
+              <div
+                className="flex items-center gap-2 rounded-md border border-white/8 bg-ink-850 py-1 pl-1 pr-3"
+                style={{ boxShadow: `inset 3px 0 0 ${leader?.colors.primary ?? '#22d3ee'}` }}
+              >
+                <TeamCrest teamId={leaderId} size="sm" />
+                <div className="leading-tight">
+                  <div className="font-display text-[10px] font-semibold uppercase tracking-[0.14em] text-haze">Leading</div>
+                  <div className="font-display text-sm font-bold uppercase tracking-wide">{leaderId}</div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-3 flex items-center gap-3">
+            <Timer size={14} className="shrink-0 text-haze" aria-hidden />
+            <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-ink-700">
+              <motion.div
+                key={tick}
+                className={cn('absolute inset-0 origin-left rounded-full', timer.tone)}
+                initial={reduceMotion ? false : { scaleX: timer.from }}
+                animate={{ scaleX: reduceMotion ? 0.62 : timer.to }}
+                transition={{ duration: TICK_MS / 1000, ease: 'linear' }}
+              />
+            </div>
+            <span className={cn('w-20 shrink-0 text-right font-display text-xs font-bold uppercase tracking-[0.12em]', timer.callTone)}>
+              {timer.call}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const STEPS = [
+  {
+    icon: Users,
+    title: 'Claim a franchise',
+    text: 'Host a room, pick one of the ten IPL teams and send friends the six-character code. Bots can take any team nobody claims.',
+  },
+  {
+    icon: Gavel,
+    title: 'Bid live',
+    text: 'Players go under the hammer one at a time. Outbid the room before the clock runs out, and keep an eye on your purse.',
+  },
+  {
+    icon: Trophy,
+    title: 'Compare squads',
+    text: 'When the last lot is sold, AI power rankings grade every squad and your team carries on into a fantasy league.',
+  },
+];
+
+const HowItWorks = () => (
+  <section aria-labelledby="how-it-works" className="border-t border-white/6 py-12 sm:py-16">
+    <div className="flex flex-wrap items-end justify-between gap-3">
+      <h2 id="how-it-works" className="font-display text-2xl font-bold uppercase tracking-wide sm:text-3xl">How it works</h2>
+      <Link to="/guide" className="inline-flex items-center gap-1 text-sm font-semibold text-signal hover:text-cyan-300">
+        Read the game guide <ArrowRight size={14} />
+      </Link>
+    </div>
+    <ol className="mt-6 grid gap-3 md:grid-cols-3">
+      {STEPS.map((step, i) => (
+        <li key={step.title} className="relative overflow-hidden rounded-lg border border-white/8 bg-ink-850/85 p-5">
+          <span className="absolute inset-x-0 top-0 h-0.5 bg-signal" aria-hidden />
+          <div className="flex items-start justify-between gap-3">
+            <span className="font-display text-5xl font-bold leading-none tabular text-ink-600" aria-hidden>0{i + 1}</span>
+            <span className="flex size-10 items-center justify-center rounded-md bg-signal/10 text-signal">
+              <step.icon size={20} />
+            </span>
+          </div>
+          <h3 className="mt-4 font-display text-xl font-bold uppercase tracking-wide text-snow">{step.title}</h3>
+          <p className="mt-1.5 text-sm leading-relaxed text-mist">{step.text}</p>
+        </li>
+      ))}
+    </ol>
+  </section>
 );
 
 // ─── Signed in: the control room ───
@@ -142,9 +352,14 @@ const ControlRoom = () => {
     <PageShell>
       <AuctionActivityFeed className="mt-4" />
 
-      <div className="pt-6 sm:pt-8">
-        <h1 className="font-display text-3xl font-bold uppercase tracking-wide text-snow sm:text-4xl">Control room</h1>
-        <p className="mt-1 text-sm text-mist">Host a new auction, join one, or look back at your squads.</p>
+      <div className="flex flex-wrap items-end justify-between gap-3 pt-6 sm:pt-8">
+        <div className="min-w-0">
+          <h1 className="font-display text-3xl font-bold uppercase tracking-wide text-snow sm:text-4xl">Control room</h1>
+          <p className="mt-1 text-sm text-mist">Host a new auction, join one, or look back at your squads.</p>
+        </div>
+        <Link to="/guide" className={buttonClasses({ variant: 'outline', size: 'sm' })}>
+          <BookOpen size={14} /> Game guide
+        </Link>
       </div>
 
       <div className="mt-5 border-b border-white/8">

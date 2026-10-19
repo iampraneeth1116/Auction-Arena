@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { ShieldCheck } from 'lucide-react';
+import { BookOpen, Lock, ShieldCheck } from 'lucide-react';
 import Logo from './ui/Logo';
 import { useAuth } from '../hooks/useAuth';
 import { TEAMS } from '../data/teams';
@@ -10,7 +10,8 @@ const YEAR = new Date().getFullYear();
 const linkClass =
   'inline-flex items-center gap-1.5 font-display text-sm font-semibold uppercase tracking-wider text-mist transition-colors hover:text-signal';
 
-// Sits at the bottom of the home page, inside PageShell's <main> (it adds no side padding of its own)
+// Sits at the bottom of the home page, the guide and the privacy page, inside PageShell's <main>
+// (it adds no side padding of its own)
 const Footer = () => {
   const { user } = useAuth();
 
@@ -33,18 +34,30 @@ const Footer = () => {
           </p>
         </div>
 
-        {user?.isAdmin && (
-          <nav aria-label="Footer">
-            <ul className="flex flex-wrap gap-x-6 gap-y-2">
+        <nav aria-label="Footer">
+          <ul className="flex flex-wrap gap-x-6 gap-y-2">
+            <li>
+              <Link to="/guide" className={linkClass}>
+                <BookOpen size={14} strokeWidth={2.4} />
+                Game guide
+              </Link>
+            </li>
+            <li>
+              <Link to="/privacy" className={linkClass}>
+                <Lock size={14} strokeWidth={2.4} />
+                Privacy
+              </Link>
+            </li>
+            {user?.isAdmin && (
               <li>
                 <Link to="/admin/fantasy" className={linkClass}>
                   <ShieldCheck size={14} strokeWidth={2.4} />
                   Fantasy admin
                 </Link>
               </li>
-            </ul>
-          </nav>
-        )}
+            )}
+          </ul>
+        </nav>
       </div>
 
       <div className="mt-8 flex flex-col gap-2 border-t border-white/6 pt-4 text-xs text-haze sm:flex-row sm:items-center sm:justify-between">

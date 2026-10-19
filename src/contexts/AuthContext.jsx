@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useGoogleLogin } from '@react-oauth/google';
+import { AnimatePresence, motion } from 'framer-motion';
 import { api } from '../lib/api';
 import { resetSocket } from '../lib/socket';
 import { AuthContext } from '../hooks/useAuth';
-import Spinner from '../components/ui/Spinner';
+import PageLoader from '../components/PageLoader';
 
 const GOOGLE_ENABLED = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
 
@@ -35,9 +36,22 @@ const toClientUser = (user) => user && {
   isAdmin: user.isAdmin,
 };
 
+const INTRO_SEEN_KEY = 'aa_intro_seen';
+
+// The pre-show plays once per browser session, and only when arriving on the home page
+const shouldPlayIntro = () => {
+  if (window.location.pathname !== '/') return false;
+  try {
+    return sessionStorage.getItem(INTRO_SEEN_KEY) !== 'true';
+  } catch {
+    return false; // storage blocked: skip it rather than show it on every visit
+  }
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [introPlaying, setIntroPlaying] = useState(shouldPlayIntro);
   const pendingGoogleLogin = useRef(null);
   const googleOpener = useRef(null);
 
@@ -98,6 +112,15 @@ export const AuthProvider = ({ children }) => {
     return applySession(user);
   };
 
+  const finishIntro = () => {
+    try {
+      sessionStorage.setItem(INTRO_SEEN_KEY, 'true');
+    } catch {
+      // storage blocked: nothing to remember
+    }
+    setIntroPlaying(false);
+  };
+
   const logout = async () => {
     try {
       await api('/api/auth/logout', { method: 'POST' });
@@ -112,7 +135,17 @@ export const AuthProvider = ({ children }) => {
       {GOOGLE_ENABLED && (
         <GoogleSignIn openerRef={googleOpener} onCode={handleGoogleCode} onFailure={(err) => settleGoogleLogin('reject', err)} />
       )}
-      {loading ? <Spinner className="min-h-dvh" /> : children}
+      <AnimatePresence mode="wait">
+        {loading || introPlaying ? (
+          <motion.div key="loader" exit={{ opacity: 0 }} transition={{ duration: 0.3, ease: 'easeIn' }} className="fixed inset-0 z-[9999]">
+            <PageLoader intro={introPlaying} onEnter={finishIntro} />
+          </motion.div>
+        ) : (
+          <motion.div key="app" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3, ease: 'easeOut' }}>
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </AuthContext.Provider>
   );
 };

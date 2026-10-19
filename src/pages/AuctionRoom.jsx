@@ -19,7 +19,7 @@ import Panel from '../components/ui/Panel';
 import Button from '../components/ui/Button';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import Segmented from '../components/ui/Segmented';
-import Spinner from '../components/ui/Spinner';
+import PageLoader from '../components/PageLoader';
 import Tag, { LiveTag } from '../components/ui/Tag';
 import Ticker, { TickerItem } from '../components/ui/Ticker';
 import TeamCrest from '../components/ui/TeamCrest';
@@ -226,7 +226,7 @@ const AuctionRoom = () => {
   };
 
   // ─── Before the stage ───
-  if (authLoading) return <Spinner className="min-h-dvh" />;
+  if (authLoading) return <PageLoader />;
   if (!user) return <Navigate to={`/lobby/${id}${wantsToWatch ? '?watch=1' : ''}`} replace />;
   if (roomError?.code === 'kicked' || currentAuction?.bannedPlayers?.includes(user.uid)) {
     return <FullScreenNotice icon={ShieldAlert} title="Removed from room">The host removed you from this auction.</FullScreenNotice>;
@@ -234,7 +234,7 @@ const AuctionRoom = () => {
   if (roomError && !currentAuction) {
     return <FullScreenNotice icon={Radio} title="Room not found">There's no auction with the code {id}. Check the code and try again.</FullScreenNotice>;
   }
-  if (loading || !currentAuction) return <Spinner className="min-h-dvh" />;
+  if (loading || !currentAuction) return <PageLoader />;
   if (currentAuction.status === 'waiting') return <Navigate to={`/lobby/${id}${wantsToWatch ? '?watch=1' : ''}`} replace />;
   if (currentAuction.status === 'completed') return <Navigate to={`/summary/${id}`} replace />;
   // Arrived after the start without a franchise: claim a free one or watch

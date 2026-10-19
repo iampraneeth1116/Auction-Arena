@@ -19,7 +19,7 @@ import Button from '../components/ui/Button';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import Toggle from '../components/ui/Toggle';
 import OverseasLimitPicker from '../components/OverseasLimitPicker';
-import Spinner from '../components/ui/Spinner';
+import PageLoader from '../components/PageLoader';
 import Stat from '../components/ui/Stat';
 import Tag from '../components/ui/Tag';
 import TeamCrest from '../components/ui/TeamCrest';
@@ -689,7 +689,7 @@ const Lobby = () => {
     );
   }
 
-  if (!room || roomLoading || room.status !== 'waiting') return <Spinner className="min-h-dvh" />;
+  if (!room || roomLoading || room.status !== 'waiting') return <PageLoader />;
 
   // ─── Lobby ───
 

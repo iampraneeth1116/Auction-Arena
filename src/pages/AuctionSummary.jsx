@@ -20,7 +20,7 @@ import TeamCrest from '../components/ui/TeamCrest';
 import PlayerPhoto from '../components/ui/PlayerPhoto';
 import RatingBadge from '../components/ui/RatingBadge';
 import Segmented from '../components/ui/Segmented';
-import Spinner from '../components/ui/Spinner';
+import PageLoader from '../components/PageLoader';
 import Button from '../components/ui/Button';
 import EmptyState from '../components/ui/EmptyState';
 import { buttonClasses } from '../components/ui/styles';
@@ -481,7 +481,7 @@ const AuctionSummary = () => {
         </Centered>
       );
     }
-    return <Spinner className="min-h-dvh" />;
+    return <PageLoader />;
   }
 
   const results = buildResults(currentAuction, roomTeams, user.uid);
