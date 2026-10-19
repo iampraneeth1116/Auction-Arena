@@ -61,6 +61,24 @@ export function planUnsoldRound({ playerOrder, roundStart, soldPlayerIds, buyers
   return someoneCanBuy ? unsold : null;
 }
 
+// Points off for an unfilled squad, applied whatever the model scored: 8 for each
+// missing place in the playing XI (or the whole squad in short modes), 1 for each
+// missing reserve. An 8-of-11 side loses 24, so it can't top a full squad of similar quality.
+const XI_SIZE = 11;
+export function incompletePenalty(playersBought, squadLimit) {
+  const xiPlaces = Math.min(XI_SIZE, squadLimit);
+  const missingXI = Math.max(0, xiPlaces - playersBought);
+  const missingReserves = Math.max(0, squadLimit - Math.max(playersBought, xiPlaces));
+  return missingXI * 8 + missingReserves;
+}
+
+// A team's final power-ranking score: half the AI's judgement (less the
+// incomplete-squad penalty), half Arena Strength, so the AI's numbers can't
+// drift far from what the squad is actually worth on paper
+const clampScore = (n) => Math.min(100, Math.max(0, Math.round(n)));
+export const blendTeamScore = ({ aiScore, penalty, strength }) =>
+  clampScore(0.5 * Math.max(0, clampScore(aiScore) - penalty) + 0.5 * strength);
+
 // Quick pool: just enough players for the franchises taking part, plus spares
 export const QUICK_POOL_SPARES = 10;
 export const quickPoolSize = (franchises, squadLimit) => Math.max(1, franchises) * squadLimit + QUICK_POOL_SPARES;

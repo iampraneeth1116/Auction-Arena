@@ -25,4 +25,8 @@ export const config = {
   jwtSecret,
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+  // AI power rankings (optional): without a key the results page says the AI isn't set up
+  groqApiKey: process.env.GROQ_API_KEY || '',
+  groqModel: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
+  groqBaseUrl: (process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1').replace(/\/$/, ''),
 };

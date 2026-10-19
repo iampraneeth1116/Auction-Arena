@@ -62,9 +62,19 @@ model Room {
   roundStart    Int      @default(0) // index in playerOrder where the current round began
   createdAt     DateTime @default(now())
 
-  members   RoomMember[]
-  purchases Purchase[]
-  messages  Message[]
+  members      RoomMember[]
+  purchases    Purchase[]
+  messages     Message[]
+  powerRanking PowerRanking?
+}
+
+// AI squad ratings for a completed auction, generated once and reused
+model PowerRanking {
+  roomId      String   @id
+  room        Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  model       String
+  rankings    Json
+  generatedAt DateTime @default(now())
 }
 
 model RoomMember {

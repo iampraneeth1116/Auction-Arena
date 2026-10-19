@@ -8,6 +8,7 @@ import { config } from './config.js';
 import { prisma } from './db.js';
 import authRoutes from './routes/auth.js';
 import roomRoutes from './routes/rooms.js';
+import powerRankingRoutes from './routes/powerRankings.js';
 import { createSocketServer } from './realtime/socket.js';
 
 const app = express();
@@ -28,6 +29,7 @@ app.get('/api/health', async (req, res) => {
 });
 app.use('/api/auth', authRoutes);
 app.use('/api', roomRoutes);
+app.use('/api', powerRankingRoutes);
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 
 // In production this same server hosts the built React app (one origin for everything)
