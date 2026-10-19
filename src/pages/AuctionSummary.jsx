@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Crown, Gavel, Gem, House, ListOrdered, LogIn, Plane, SearchX, Share2, Trophy, Users } from 'lucide-react';
+import { Bot, Crown, Gavel, Gem, House, ListOrdered, LogIn, Plane, SearchX, Share2, TriangleAlert, Trophy, Users } from 'lucide-react';
 import { useAuction } from '../hooks/useAuction';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
@@ -48,7 +48,8 @@ function buildResults(auction, roomTeams, userId) {
       players,
       spent: players.reduce((sum, p) => sum + p.bid, 0),
       overseas: players.filter(isOverseas).length,
-      strength: teamStrength(rt.squad || [], squadLimit),
+      strength: teamStrength(rt.squad || [], squadLimit, auction.overseasLimit),
+      isBot: Boolean(manager?.isBot),
       managerName: manager?.name ?? 'Unknown manager',
       isYou: rt.userId === userId,
     };
@@ -101,6 +102,7 @@ const OverseasMark = () => (
 const ManagerLine = ({ team, className }) => (
   <div className={cn('flex min-w-0 items-center gap-1.5 text-sm text-mist', className)}>
     <span className="truncate">{team.managerName}</span>
+    {team.isBot && <Tag icon={Bot}>Bot</Tag>}
     {team.isYou && <Tag tone="volt">You</Tag>}
   </div>
 );
@@ -167,8 +169,10 @@ const StandingsTab = ({ results }) => {
       </div>
 
       <p className="text-sm text-mist">
-        <span className="font-semibold text-snow">Arena Strength</span> rates each squad on paper from its players&apos;
-        Arena Ratings: the best XI counts most (an empty place in it counts as zero) and the whole squad adds a little for depth.
+        <span className="font-semibold text-snow">Arena Strength</span> rates each squad on the best playing XI it can field
+        (within the overseas cap) from its players&apos; Arena Ratings: the XI counts most (an empty place in it counts as zero)
+        and depth adds a little. The XI&apos;s combination matters too: a keeper, enough batting and bowling, openers and a
+        finisher, a left/right mix up top, pace and spin, and bowlers for the powerplay and the death. Anything missing costs points.
       </p>
 
       <Panel label="Standings" bodyClassName="p-0">
@@ -183,7 +187,7 @@ const StandingsTab = ({ results }) => {
         <ol className="divide-y divide-white/6">
           {standings.map((team, index) => {
             const rank = index + 1;
-            const { score, core, depth } = team.strength;
+            const { score, core, depth, gaps } = team.strength;
             return (
               <li
                 key={team.id}
@@ -225,6 +229,11 @@ const StandingsTab = ({ results }) => {
                     </div>
                     <span className="hidden w-8 text-right font-display text-xl font-bold tabular md:inline">{score}</span>
                   </div>
+                  {gaps.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {gaps.map(gap => <Tag key={gap} tone="flare" icon={TriangleAlert}>{gap}</Tag>)}
+                    </div>
+                  )}
                 </div>
 
                 <div className="hidden text-sm text-mist tabular md:block">
@@ -259,6 +268,7 @@ const StandingsTab = ({ results }) => {
 const SquadCard = ({ team, results, overseasLimit, sharing, onShare }) => {
   const franchise = TEAMS_BY_ID.get(team.teamId);
   const busy = sharing === team.teamId;
+  const inXI = new Set(team.strength.bestXI.map(p => p.id));
   return (
     <Panel className="min-w-0" bodyClassName="p-0">
       <span className="absolute inset-x-0 top-0 h-0.5" style={{ background: franchise?.colors.primary }} aria-hidden />
@@ -314,6 +324,7 @@ const SquadCard = ({ team, results, overseasLimit, sharing, onShare }) => {
                         {player.name}
                         {isOverseas(player) && <OverseasMark />}
                       </span>
+                      {inXI.has(player.id) && <Tag tone="signal" className="shrink-0">XI</Tag>}
                       <RatingBadge rating={player.rating} size="sm" />
                       <span className="w-[4.5rem] shrink-0 text-right font-display text-base font-semibold tabular">{formatPrice(player.bid)}</span>
                     </li>
@@ -560,6 +571,7 @@ const AuctionSummary = () => {
             team={posterTeam}
             managerName={posterTeam.managerName}
             squadLimit={results.squadLimit}
+            overseasLimit={currentAuction.overseasLimit}
             mode={currentAuction.auctionType}
             roomId={roomId}
           />

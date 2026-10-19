@@ -5,6 +5,7 @@ import RatingBadge from '../ui/RatingBadge';
 import Tag from '../ui/Tag';
 import { ratingOf } from '../../lib/catalog';
 import { ratingTier } from '../../lib/playerRating';
+import { profileLines } from '../../lib/playerProfile';
 import { ROLE_META, formatPrice, isOverseas } from '../../lib/format';
 
 const statValue = (value) => (value === undefined || value === null || value === '-' || value === '' ? '—' : value);
@@ -55,6 +56,11 @@ const LotCard = ({ player, lot, lots }) => {
           {TIER_LABEL[ratingTier(rating)]} · Base {formatPrice(player.basePrice)}
           {lot ? <span className="text-haze"> · Lot {lot}{lots ? ` of ${lots}` : ''}</span> : null}
         </p>
+        {profileLines(player).length > 0 && (
+          <p className="mt-1 flex flex-wrap gap-x-3 text-xs text-haze">
+            {profileLines(player).map(line => <span key={line}>{line}</span>)}
+          </p>
+        )}
         <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 sm:mt-4 sm:grid-cols-4">
           {statLine(player).map(({ label, value }) => (
             <div key={label} className="border-l-2 border-ink-600 pl-2">

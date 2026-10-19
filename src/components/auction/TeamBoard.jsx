@@ -17,10 +17,10 @@ const TeamBoard = ({ roomTeams, players, squadLimit, overseasLimit, myId }) => {
     const entry = roomTeams.find(rt => rt.teamId === t.id);
     const manager = entry ? players.find(p => p.id === entry.userId) : null;
     const squad = entry?.squad ?? [];
-    return { team: t, entry, manager, squad, strength: teamStrength(squad, squadLimit) };
+    return { team: t, entry, manager, squad, strength: teamStrength(squad, squadLimit, overseasLimit) };
   })
     .filter(r => r.entry)
-    .sort((a, b) => b.strength.score - a.strength.score || b.squad.length - a.squad.length), [roomTeams, players, squadLimit]);
+    .sort((a, b) => b.strength.score - a.strength.score || b.squad.length - a.squad.length), [roomTeams, players, squadLimit, overseasLimit]);
 
   const expanded = openTeam ?? rows.find(r => r.entry.userId === myId)?.team.id;
 
@@ -66,6 +66,9 @@ const TeamBoard = ({ roomTeams, players, squadLimit, overseasLimit, myId }) => {
 
             {isOpen && (
               <div className="space-y-3 px-3 pb-3">
+                {strength.gaps.length > 0 && (
+                  <div className="flex flex-wrap gap-1">{strength.gaps.map(g => <Tag key={g} tone="flare">{g}</Tag>)}</div>
+                )}
                 {roster.length === 0 ? (
                   <p className="text-xs text-haze">No players yet.</p>
                 ) : (

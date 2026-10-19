@@ -1,5 +1,7 @@
 import { IPL_PLAYERS } from '../src/data/players.js';
 import { PLAYERS_BY_ID, RATINGS, isOverseas, nextBidLakhs, toLakhs } from './auctionRules.js';
+import { profileOf } from '../src/lib/playerProfile.js';
+import { xiNeeds } from '../src/lib/catalog.js';
 
 // Auto-managers for franchises nobody claimed. Every decision is made on the
 // server from the same rules humans bid under, so a bot can never break a squad,
@@ -46,6 +48,8 @@ export function readMarket({ playerOrder, currentIndex, openSlotsByTeam }) {
   const prices = upcoming.map(p => toLakhs(p.basePrice)).sort((a, b) => a - b);
   const hungryTeams = openSlotsByTeam.filter(open => open > 0).length;
   return {
+    // The players still to come after this one, with their profiles
+    later: upcoming.slice(1).map(p => [p, profileOf(p)]),
     poolRating: pool.reduce((sum, p) => sum + (RATINGS.get(p.id) ?? 40), 0) / Math.max(1, pool.length),
     lotsLeft: upcoming.length,
     // A quarter of the remaining lots are this cheap or cheaper
@@ -78,6 +82,43 @@ function roleNeed(squadPlayers, role, squadLimit) {
   return need(role === 'Bowler' ? 'bowling' : 'batting');
 }
 
+// The jobs a playing XI needs covered (the same needs Arena Strength judges, see
+// judgeXI in src/lib/catalog.js), who does each one, and the points a gap costs there
+const bowls = (p) => p.role === 'Bowler' || p.role === 'All-Rounder';
+const bats = (p) => p.role !== 'Bowler';
+const XI_JOBS = [
+  { cost: 8, need: () => 1, does: (p) => p.role === 'Wicket-Keeper' },
+  { cost: 6, need: (n) => n.bowling, does: bowls },
+  { cost: 5, need: (n) => n.batting, does: bats },
+  { cost: 3, need: (n) => n.openers, does: (p, pr) => bats(p) && pr.order === 'open' },
+  { cost: 3, need: (n) => n.finisher, does: (p, pr) => bats(p) && pr.order === 'finish' },
+  { cost: 3, need: (n) => n.pace, does: (p, pr) => bowls(p) && pr.bowling === 'pace' },
+  { cost: 3, need: (n) => n.spin, does: (p, pr) => bowls(p) && pr.bowling === 'spin' },
+  { cost: 2, need: (n) => n.powerplay, does: (p, pr) => bowls(p) && Boolean(pr.phases?.includes('pp')) },
+  { cost: 3, need: (n) => n.death, does: (p, pr) => bowls(p) && Boolean(pr.phases?.includes('death')) },
+];
+
+// How keen the squad's gaps make a bot on this player. A player who fills jobs the
+// squad still lacks is worth more, the more those gaps would cost (a keeper most);
+// once there are about as many unfilled jobs as open places, a bot holds out for
+// players who fill one, as long as enough lots are left to wait for them and
+// someone still to come could.
+function xiNeed(squadPlayers, player, squadLimit, market) {
+  const needs = xiNeeds(Math.min(11, squadLimit));
+  const withProfile = (p) => [p, profileOf(p)];
+  const squad = squadPlayers.map(withProfile);
+  const missing = XI_JOBS.filter(job => squad.filter(([p, pr]) => job.does(p, pr)).length < job.need(needs));
+  if (missing.length === 0) return 1;
+  const [, profile] = withProfile(player);
+  const filled = missing.filter(job => job.does(player, profile)).reduce((sum, job) => sum + job.cost, 0);
+  const openSlots = squadLimit - squadPlayers.length;
+  const tight = missing.length >= openSlots;
+  const canWait = market.fairShare >= openSlots * 2
+    && missing.some(job => market.later.some(([p, pr]) => job.does(p, pr)));
+  if (filled === 0) return tight && canWait ? 0.35 : 1;
+  return 1 + filled * (tight ? 0.04 : 0.015);
+}
+
 // The most this bot will pay for the player, in lakhs
 export function botValuation({ player, member, squadPlayers, room, market, mood }) {
   const openSlots = room.squadLimit - squadPlayers.length;
@@ -93,7 +134,7 @@ export function botValuation({ player, member, squadPlayers, room, market, mood 
   const quality = 2 ** ((rating - market.poolRating) / 10);
   const favour = player.role === style.favours ? 1.12 : 1;
   const urgency = openSlots <= 2 ? 1.25 : 1;
-  const need = roleNeed(squadPlayers, player.role, room.squadLimit);
+  const need = roleNeed(squadPlayers, player.role, room.squadLimit) * xiNeed(squadPlayers, player, room.squadLimit, market);
   let value = perSlot * quality * need * favour * style.boldness * urgency;
 
   // One star can take ~22% of the purse in a mega auction, up to ~35% in a 5-player one

@@ -107,8 +107,8 @@ const splitPrice = (crores) => (crores > 0 && crores < 1
   ? { value: `₹${Math.round(crores * 100)}`, unit: 'L' }
   : { value: `₹${formatCrores(crores)}`, unit: 'Cr' });
 
-// Props: team (a roomTeams entry), managerName, squadLimit, mode (auctionType), roomId
-const SquadPoster = ({ team, managerName, squadLimit = 25, mode, roomId }) => {
+// Props: team (a roomTeams entry), managerName, squadLimit, overseasLimit, mode (auctionType), roomId
+const SquadPoster = ({ team, managerName, squadLimit = 25, overseasLimit, mode, roomId }) => {
   const franchise = TEAMS_BY_ID.get(team.teamId);
   const primary = franchise?.colors.primary ?? '#22d3ee';
   const secondary = franchise?.colors.secondary ?? '#a3e635';
@@ -121,7 +121,7 @@ const SquadPoster = ({ team, managerName, squadLimit = 25, mode, roomId }) => {
     .sort((a, b) => roleOrder(a.role) - roleOrder(b.role) || b.bid - a.bid);
   const spent = players.reduce((sum, p) => sum + p.bid, 0);
   const overseas = players.filter(isOverseas).length;
-  const { score } = teamStrength(team.squad || [], squadLimit);
+  const { score } = teamStrength(team.squad || [], squadLimit, overseasLimit);
   const { cols, rows, cap, tier } = gridLayout(players.length);
   const spentLabel = splitPrice(spent);
 

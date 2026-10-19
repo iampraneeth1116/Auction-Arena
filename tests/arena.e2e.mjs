@@ -4,6 +4,9 @@
 import { TestClient, createChecker, startServer } from './helpers.mjs';
 import { IPL_PLAYERS } from '../src/data/players.js';
 import { RATINGS, buildPlayerOrder, isOverseas, planUnsoldRound } from '../server/auctionRules.js';
+import { teamStrength, xiOverseasCap } from '../src/lib/catalog.js';
+import { profileOf } from '../src/lib/playerProfile.js';
+import { PLAYER_PROFILES } from '../src/data/playerProfiles.js';
 
 const PLAYERS = new Map(IPL_PLAYERS.map(p => [p.id, p]));
 const PORT = 3096;
@@ -25,6 +28,33 @@ const guest = async (name) => {
 try {
   const host = await guest('Host');
   const friend = await guest('Friend');
+
+  // ─── Playing profiles and best-XI judging (pure functions) ───
+  const badProfiles = Object.entries(PLAYER_PROFILES).filter(([id, text]) => {
+    const [bat, order, bowl, phases, style] = text.split(' ');
+    return !PLAYERS.has(id) || !/^[RL?]$/.test(bat) || !/^(open|top|middle|finish|tail|\?)$/.test(order) ||
+      !/^(RF|LF|OB|LB|SLA|LWS|-|\?)$/.test(bowl) || !/^((pp|mid|death)(,(pp|mid|death))*|-|\?)$/.test(phases) ||
+      (style !== undefined && !/^(agg|bal|anc)$/.test(style));
+  });
+  check('every playing profile is for a real player and well formed', badProfiles.length === 0, JSON.stringify(badProfiles.slice(0, 3)));
+  const byName = (name) => IPL_PLAYERS.find(p => p.name === name);
+  const bumrah = profileOf(byName('Jasprit Bumrah'));
+  check('a known profile reads correctly', bumrah.bowling === 'pace' && bumrah.phases.includes('death') && bumrah.order === 'tail');
+  const unprofiledQuick = IPL_PLAYERS.find(p => /^UFA\d/.test(p.set) && !PLAYER_PROFILES[p.id]);
+  check('an unprofiled bowler from a fast-bowling set still counts as pace', profileOf(unprofiledQuick).bowling === 'pace');
+  check('the XI overseas cap follows the room limit', xiOverseasCap(25, 8) === 4 && xiOverseasCap(25, 16) === 8 && xiOverseasCap(25, 25) === 11 && xiOverseasCap(11, 4) === 11);
+  const squadOf = (names) => names.map(n => ({ id: byName(n).id, bid: 1 }));
+  const overseasHeavy = squadOf(['Travis Head', 'Jos Buttler', 'Nicholas Pooran', 'Heinrich Klaasen', 'Tim David', 'Rashid Khan', 'Pat Cummins', 'Virat Kohli', 'Jasprit Bumrah', 'Ravindra Jadeja', 'Mohammad Siraj']);
+  const capped = teamStrength(overseasHeavy, 25, 8);
+  const freed = teamStrength(overseasHeavy, 25, 16);
+  check('7 overseas under the usual limit: only 4 play, so the XI is short', capped.bestXI.length === 8 && capped.gaps.some(g => /Overseas cap/.test(g)), JSON.stringify(capped.gaps));
+  check('allowing more overseas lets them all play and scores higher', freed.bestXI.length === 11 && freed.score > capped.score);
+  const balanced = teamStrength(squadOf(['Nicholas Pooran', 'Shreyas Iyer', 'Josh Hazlewood', 'Sunil Narine', 'Hardik Pandya', 'Ishan Kishan', 'Jasprit Bumrah', 'Rohit Sharma', 'Virat Kohli', 'Ravindra Jadeja', 'Sam Curran']), 11, 4);
+  const noBowlers = teamStrength(squadOf(['Virat Kohli', 'Rohit Sharma', 'Shubman Gill', 'Suryakumar Yadav', 'Rishabh Pant', 'KL Rahul', 'Sanju Samson', 'Ishan Kishan', 'Rinku Singh', 'Yashasvi Jaiswal', 'Ruturaj Gaikwad']), 11, 4);
+  const allPace = teamStrength(squadOf(['Virat Kohli', 'Rohit Sharma', 'Shreyas Iyer', 'Suryakumar Yadav', 'Rishabh Pant', 'Hardik Pandya', 'Rinku Singh', 'Jasprit Bumrah', 'Mohammad Siraj', 'Mohammad Shami', 'Bhuvneshwar Kumar']), 11, 4);
+  check('a balanced XI has no gaps', balanced.gaps.length === 0, JSON.stringify(balanced.gaps));
+  check('an XI with no bowlers is flagged and scores much lower', noBowlers.gaps.some(g => /Short of bowling/.test(g)) && noBowlers.score < balanced.score - 20, `${noBowlers.score} vs ${balanced.score}`);
+  check('an all-pace attack is flagged for having no spinner', allPace.gaps.includes('No spinner') && allPace.score < balanced.score, JSON.stringify(allPace.gaps));
 
   // ─── Unsold rounds (pure rules) ───
   const roundOrder = [0, 1, 2, 3, 4, 5];
