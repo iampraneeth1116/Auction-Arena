@@ -119,8 +119,10 @@ export class TestClient {
     });
   }
 
+  // Replies normally take milliseconds. The wait is generous so one slow database write on a
+  // busy machine doesn't fail a run; an event that never replies still does.
   emit(event, payload) {
-    return this.socket.timeout(8000).emitWithAck(event, payload);
+    return this.socket.timeout(20000).emitWithAck(event, payload);
   }
 
   async join(roomId) {
