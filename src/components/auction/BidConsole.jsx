@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { Gavel, Trophy } from 'lucide-react';
 import Button from '../ui/Button';
 import { cn } from '../../lib/cn';
-import { bidButtonLabel, formatPrice } from '../../lib/format';
+import { bidButtonLabel, formatPrice, overseasUsage } from '../../lib/format';
 
 const Readout = ({ label, value, warn }) => (
   <div className="min-w-0 border-l border-white/8 pl-2.5 first:border-l-0 first:pl-0">
@@ -40,7 +40,7 @@ const BidConsole = ({ team, squadLimit, overseasLimit, overseasCount, maxBid, ne
       <div className="grid grid-cols-4 gap-2 rounded-md bg-ink-900/70 px-3 py-2">
         <Readout label="Purse" value={formatPrice(team?.budgetRemaining ?? 0)} />
         <Readout label="Squad" value={`${team?.squad?.length ?? 0}/${squadLimit}`} warn={state === 'full'} />
-        <Readout label="Overseas" value={`${overseasCount}/${overseasLimit}`} warn={state === 'overseas'} />
+        <Readout label="Overseas" value={overseasUsage(overseasCount, overseasLimit, squadLimit)} warn={state === 'overseas'} />
         <Readout label="Max bid" value={formatPrice(maxBid)} warn={state === 'budget' || overMax} />
       </div>
       <p className="hidden text-center text-xs text-haze lg:block">

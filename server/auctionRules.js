@@ -48,6 +48,23 @@ function shuffle(items) {
   return items;
 }
 
+// Rotate unsold: once every player has been called, this round's unsold players
+// come back for another round, as long as that can still change something: the
+// round just played sold at least one player, and a franchise with an open slot
+// can afford the cheapest of them. Returns the player indexes to call again, or null.
+export function planUnsoldRound({ playerOrder, roundStart, soldPlayerIds, buyers }) {
+  const round = playerOrder.slice(roundStart);
+  const unsold = round.filter(index => !soldPlayerIds.has(IPL_PLAYERS[index].id));
+  if (unsold.length === 0 || unsold.length === round.length) return null;
+  const cheapest = Math.min(...unsold.map(index => toLakhs(IPL_PLAYERS[index].basePrice)));
+  const someoneCanBuy = buyers.some(b => b.openSlots > 0 && b.budgetLakhs >= cheapest);
+  return someoneCanBuy ? unsold : null;
+}
+
+// Quick pool: just enough players for the franchises taking part, plus spares
+export const QUICK_POOL_SPARES = 10;
+export const quickPoolSize = (franchises, squadLimit) => Math.max(1, franchises) * squadLimit + QUICK_POOL_SPARES;
+
 // Draws that many players at random from the candidates, sharing the places out
 // by role in the same mix as the candidates
 function pickByRole(candidates, places, chosen) {
@@ -123,11 +140,12 @@ function pickPool(poolSize, { franchises, minIndians }) {
 }
 
 // Sets run in the order they appear in players.js; players shuffle within a set.
-// squads describes the room, so a smaller pool still has enough Indians for every
-// squad; it defaults to all ten franchises under the mode's own limits.
-export function buildPlayerOrder(auctionType = 'mega', squads = {}) {
+// poolSize overrides the mode's own pool (used by the quick pool option). squads
+// describes the room, so a smaller pool still has enough Indians for every squad;
+// it defaults to all ten franchises under the mode's own limits.
+export function buildPlayerOrder(auctionType = 'mega', poolSize = undefined, squads = {}) {
   const mode = AUCTION_MODES[auctionType] ?? AUCTION_MODES.mega;
-  const size = mode.poolSize;
+  const size = poolSize ?? mode.poolSize;
   const { franchises = TEAMS.length, squadLimit = mode.squadLimit, overseasLimit = mode.overseasLimit } = squads;
   const overseasPlaces = franchises * Math.min(overseasLimit, squadLimit);
   const indianPlaces = franchises * squadLimit - overseasPlaces;

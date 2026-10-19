@@ -7,7 +7,7 @@ import PlayerPhoto from '../ui/PlayerPhoto';
 import { TEAMS } from '../../data/teams';
 import { teamStrength, withPlayer } from '../../lib/catalog';
 import { cn } from '../../lib/cn';
-import { ROLES, ROLE_META, formatPrice, isOverseas } from '../../lib/format';
+import { ROLES, ROLE_META, formatPrice, isOverseas, overseasUsage } from '../../lib/format';
 
 // Every franchise in the room, ranked live by Arena Strength
 const TeamBoard = ({ roomTeams, players, squadLimit, overseasLimit, myId }) => {
@@ -54,7 +54,7 @@ const TeamBoard = ({ roomTeams, players, squadLimit, overseasLimit, myId }) => {
               </span>
               <span className="text-right">
                 <span className="block tabular font-display text-sm font-bold">{formatPrice(entry.budgetRemaining)}</span>
-                <span className="block tabular text-[11px] text-haze">{squad.length}/{squadLimit} · OS {overseas}/{overseasLimit}</span>
+                <span className="block tabular text-[11px] text-haze">{squad.length}/{squadLimit} · OS {overseasUsage(overseas, overseasLimit, squadLimit)}</span>
               </span>
               {squad.length > 0 ? (
                 <RatingBadge rating={strength.score} size="sm" />

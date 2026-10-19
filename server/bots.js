@@ -38,7 +38,8 @@ export const botName = (teamId) => `${teamId} Bot`;
 export const rollMood = () => 0.8 + Math.random() * 0.4;
 
 // What every bot needs to know about the auction as a whole, worked out once per lot:
-// how good the pool is, how many lots are left, and what cheap players still cost
+// how good the pool is, how many lots are left, what cheap players still cost, and
+// whether this is a later round of unsold players (they're added to the end of the order)
 export function readMarket({ playerOrder, currentIndex, openSlotsByTeam }) {
   const pool = playerOrder.map(index => IPL_PLAYERS[index]);
   const upcoming = pool.slice(currentIndex);
@@ -50,6 +51,7 @@ export function readMarket({ playerOrder, currentIndex, openSlotsByTeam }) {
     // A quarter of the remaining lots are this cheap or cheaper
     reservePerSlot: prices[Math.floor(prices.length / 4)] ?? 30,
     fairShare: upcoming.length / Math.max(1, hungryTeams),
+    repeatRound: currentIndex >= new Set(playerOrder).size,
   };
 }
 
@@ -98,8 +100,9 @@ export function botValuation({ player, member, squadPlayers, room, market, mood 
   const starShare = 0.22 + ((25 - room.squadLimit) / 25) * 0.17;
   value = Math.min(value, room.budget * starShare) * mood;
 
-  // Falling behind on filling the squad: take a player at his base price
-  if (openSlots >= market.fairShare * 0.8) value = Math.max(value, basePrice);
+  // Falling behind on filling the squad, or a player back in a round of unsold
+  // players (money left at the end is worth nothing): take him at his base price
+  if (openSlots >= market.fairShare * 0.8 || market.repeatRound) value = Math.max(value, basePrice);
 
   // Always keep enough for the rest of the squad at the going cheap price
   value = Math.min(value, member.budgetRemaining - (openSlots - 1) * market.reservePerSlot);

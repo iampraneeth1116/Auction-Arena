@@ -16,6 +16,8 @@ import {
   buildPlayerOrder,
   isOverseas,
   nextBidLakhs,
+  planUnsoldRound,
+  quickPoolSize,
   toCrores,
   toLakhs,
 } from '../auctionRules.js';
@@ -54,6 +56,10 @@ function toRuntime(row) {
       playerOrder: row.playerOrder,
       currentIndex: row.currentIndex,
       bannedUserIds: row.bannedUserIds,
+      quickPool: row.quickPool,
+      rotateUnsold: row.rotateUnsold,
+      round: row.round,
+      roundStart: row.roundStart,
       createdAt: row.createdAt,
     },
     members: new Map(row.members.map(m => [m.userId, m])),
@@ -130,6 +136,9 @@ export function getSnapshot(rt) {
     playerOrder: room.playerOrder,
     currentIndex: room.currentIndex,
     bannedPlayers: room.bannedUserIds,
+    quickPool: room.quickPool,
+    rotateUnsold: room.rotateUnsold,
+    round: room.round,
     players: members.map(m => ({
       id: m.userId,
       name: m.displayName,
@@ -329,9 +338,34 @@ async function advance(rt) {
 
   const nextIndex = room.currentIndex + 1;
   if (nextIndex >= room.playerOrder.length) {
+    if (await startUnsoldRound(rt)) return;
     return completeRoom(rt, 'Auction completed — every player has gone under the hammer');
   }
   await startPlayer(rt, nextIndex, room.bidTimer * 1000);
+}
+
+// Unsold players go round again (see planUnsoldRound for when that stops)
+async function startUnsoldRound(rt) {
+  const { room } = rt;
+  if (!room.rotateUnsold) return false;
+  const unsold = planUnsoldRound({
+    playerOrder: room.playerOrder,
+    roundStart: room.roundStart,
+    soldPlayerIds: new Set(rt.purchases.map(p => p.playerId)),
+    buyers: [...rt.members.values()]
+      .filter(m => m.teamId)
+      .map(m => ({ openSlots: room.squadLimit - squadOf(rt, m).length, budgetLakhs: m.budgetRemaining })),
+  });
+  if (!unsold) return false;
+
+  const playerOrder = [...room.playerOrder, ...unsold];
+  const roundStart = room.playerOrder.length;
+  const round = room.round + 1;
+  await prisma.room.update({ where: { id: room.id }, data: { playerOrder, round, roundStart } });
+  Object.assign(room, { playerOrder, round, roundStart });
+  await addMessage(rt, { text: `Round ${round}: ${unsold.length} unsold player${unsold.length === 1 ? ' comes' : 's come'} back` });
+  await startPlayer(rt, roundStart, room.bidTimer * 1000);
+  return true;
 }
 
 async function completeRoom(rt, text) {
@@ -471,11 +505,20 @@ function randomRoomCode() {
   return code;
 }
 
-// The host creates the room and claims a franchise in one step
-export async function createRoom({ user, teamId, auctionType }) {
+// The overseas limit can be anything from 0 to the squad size (= no limit)
+function checkOverseasLimit(limit, squadLimit) {
+  if (!Number.isInteger(limit) || limit < 0 || limit > squadLimit) {
+    throw new HttpError(400, `Overseas limit must be between 0 and ${squadLimit}`);
+  }
+}
+
+// The host creates the room and claims a franchise in one step. bidTimer and
+// overseasLimit are optional: without them the mode's own values apply.
+export async function createRoom({ user, teamId, auctionType, quickPool = false, rotateUnsold = true, bidTimer, overseasLimit }) {
   const mode = AUCTION_MODES[auctionType];
   if (!mode) throw new HttpError(400, 'Unknown auction mode');
   if (!TEAMS_BY_ID.has(teamId)) throw new HttpError(400, 'Unknown franchise');
+  if (overseasLimit !== undefined) checkOverseasLimit(overseasLimit, mode.squadLimit);
 
   for (let attempt = 0; attempt < 5; attempt++) {
     const id = randomRoomCode();
@@ -486,9 +529,11 @@ export async function createRoom({ user, teamId, auctionType }) {
           hostId: user.id,
           auctionType,
           squadLimit: mode.squadLimit,
-          overseasLimit: mode.overseasLimit,
+          overseasLimit: overseasLimit ?? mode.overseasLimit,
           budget: mode.budgetLakhs,
-          bidTimer: mode.bidTimer ?? DEFAULT_BID_TIMER,
+          bidTimer: bidTimer ?? mode.bidTimer ?? DEFAULT_BID_TIMER,
+          quickPool,
+          rotateUnsold,
           playerOrder: [],
           members: {
             create: { userId: user.id, displayName: user.name, teamId, budgetRemaining: mode.budgetLakhs },
@@ -555,16 +600,32 @@ export function selectTeam(rt, userId, teamId) {
   });
 }
 
-// Room settings the host can change in the lobby; anything left out keeps its value
-export function updateSettings(rt, userId, { bidTimer = rt.room.bidTimer }) {
+// Room settings the host can change; anything left out keeps its current value
+export function updateSettings(rt, userId, {
+  bidTimer = rt.room.bidTimer,
+  quickPool = rt.room.quickPool,
+  rotateUnsold = rt.room.rotateUnsold,
+  overseasLimit = rt.room.overseasLimit,
+}) {
   return exclusive(rt, async () => {
     requireHost(rt, userId);
     if (!Number.isInteger(bidTimer) || bidTimer < MIN_BID_TIMER || bidTimer > MAX_BID_TIMER) {
       throw new HttpError(400, `Bid timer must be between ${MIN_BID_TIMER} and ${MAX_BID_TIMER} seconds`);
     }
+    if (typeof quickPool !== 'boolean') throw new HttpError(400, 'Invalid pool setting');
+    if (typeof rotateUnsold !== 'boolean') throw new HttpError(400, 'Invalid unsold setting');
+    checkOverseasLimit(overseasLimit, rt.room.squadLimit);
     if (rt.room.status === 'completed') throw new HttpError(409, 'This auction has already ended.');
-    await prisma.room.update({ where: { id: rt.room.id }, data: { bidTimer } });
-    rt.room.bidTimer = bidTimer;
+    // The pool is drawn when the auction starts, so it can't change afterwards
+    if (quickPool !== rt.room.quickPool && rt.room.status !== 'waiting') {
+      throw new HttpError(409, 'The player pool is fixed once the auction starts');
+    }
+    // Squads may already be built around the limit, so it only changes before the start
+    if (overseasLimit !== rt.room.overseasLimit && rt.room.status !== 'waiting') {
+      throw new HttpError(409, 'The overseas limit is fixed once the auction starts');
+    }
+    await prisma.room.update({ where: { id: rt.room.id }, data: { bidTimer, quickPool, rotateUnsold, overseasLimit } });
+    Object.assign(rt.room, { bidTimer, quickPool, rotateUnsold, overseasLimit });
     broadcast(rt);
   });
 }
@@ -657,8 +718,10 @@ export function startAuction(rt, userId) {
     const managed = [...rt.members.values()].filter(m => m.teamId).length;
     if (managed < 2) throw new HttpError(409, 'At least 2 franchises need a manager to start');
 
-    // Shorter pools are drawn for the franchises actually taking part
-    const playerOrder = buildPlayerOrder(rt.room.auctionType, {
+    // Quick pool: one squad's worth of players per franchise taking part, plus spares.
+    // Shorter pools are drawn for the franchises actually taking part.
+    const poolSize = rt.room.quickPool ? quickPoolSize(managed, rt.room.squadLimit) : undefined;
+    const playerOrder = buildPlayerOrder(rt.room.auctionType, poolSize, {
       franchises: managed,
       squadLimit: rt.room.squadLimit,
       overseasLimit: rt.room.overseasLimit,

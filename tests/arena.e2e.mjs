@@ -1,9 +1,9 @@
-// End-to-end: the auction modes and their player pools, and bots: adding and
-// removing them in the lobby, then an auction where they bid on their own under
-// the same purse, squad and overseas rules as people.
+// End-to-end: the auction modes and their player pools, room options (quick pool,
+// unsold rounds, overseas limit), and bots: adding and removing them in the lobby,
+// then an auction where they bid on their own under the same rules as people.
 import { TestClient, createChecker, startServer } from './helpers.mjs';
 import { IPL_PLAYERS } from '../src/data/players.js';
-import { RATINGS, buildPlayerOrder, isOverseas } from '../server/auctionRules.js';
+import { RATINGS, buildPlayerOrder, isOverseas, planUnsoldRound } from '../server/auctionRules.js';
 
 const PLAYERS = new Map(IPL_PLAYERS.map(p => [p.id, p]));
 const PORT = 3096;
@@ -26,14 +26,33 @@ try {
   const host = await guest('Host');
   const friend = await guest('Friend');
 
+  // ─── Unsold rounds (pure rules) ───
+  const roundOrder = [0, 1, 2, 3, 4, 5];
+  const soldTwo = new Set([IPL_PLAYERS[0].id, IPL_PLAYERS[3].id]);
+  const buyer = [{ openSlots: 2, budgetLakhs: 5000 }];
+  check('unsold players come back for another round', JSON.stringify(planUnsoldRound({ playerOrder: roundOrder, roundStart: 0, soldPlayerIds: soldTwo, buyers: buyer })) === JSON.stringify([1, 2, 4, 5]));
+  check('only the current round is looked at', JSON.stringify(planUnsoldRound({ playerOrder: roundOrder, roundStart: 3, soldPlayerIds: soldTwo, buyers: buyer })) === JSON.stringify([4, 5]));
+  check('no new round after a round that sold nobody', planUnsoldRound({ playerOrder: roundOrder, roundStart: 0, soldPlayerIds: new Set(), buyers: buyer }) === null);
+  check('no new round when no franchise has a free slot', planUnsoldRound({ playerOrder: roundOrder, roundStart: 0, soldPlayerIds: soldTwo, buyers: [{ openSlots: 0, budgetLakhs: 5000 }] }) === null);
+  check('no new round when nobody can afford the cheapest player', planUnsoldRound({ playerOrder: roundOrder, roundStart: 0, soldPlayerIds: soldTwo, buyers: [{ openSlots: 3, budgetLakhs: 10 }] }) === null);
+
   // ─── Modes and pools ───
   check('an unknown mode is refused', (await host.req('POST', '/api/rooms', { teamId: 'MI', auctionType: 'turbo' })).status === 400);
+  for (const bad of [2, 61, 7.5]) {
+    check(`a ${bad}s bid timer is refused at creation`, (await host.req('POST', '/api/rooms', { teamId: 'MI', bidTimer: bad })).status === 400);
+  }
+  const fastMega = (await host.req('POST', '/api/rooms', { teamId: 'MI', auctionType: 'mega', bidTimer: 3 })).data.id;
+  const slowClassic = (await host.req('POST', '/api/rooms', { teamId: 'MI', auctionType: 'sprint11', bidTimer: 20 })).data.id;
+  const plainMega = (await host.req('POST', '/api/rooms', { teamId: 'MI' })).data.id;
   const classic = (await host.req('POST', '/api/rooms', { teamId: 'MI', auctionType: 'sprint11' })).data.id;
   const blitz = (await host.req('POST', '/api/rooms', { teamId: 'MI', auctionType: 'blitz5' })).data.id;
   const sprint = (await host.req('POST', '/api/rooms', { teamId: 'MI', auctionType: 'sprint5' })).data.id;
   await host.connect();
   const classicState = (await host.join(classic)).state;
   check('Classic 11: 11-player squads, 4 overseas, ₹90 Cr', classicState.squadLimit === 11 && classicState.overseasLimit === 4 && classicState.settings.budget === 90);
+  check('a Mega room created with 3-second bids uses them', (await host.join(fastMega)).state.settings.bidTimer === 3);
+  check('a Classic room created with 20-second bids uses them', (await host.join(slowClassic)).state.settings.bidTimer === 20);
+  check('without a choice the mode default applies (10s)', (await host.join(plainMega)).state.settings.bidTimer === 10);
   const blitzState = (await host.join(blitz)).state;
   check('Blitz 5: 5-player squads, ₹30 Cr and 3-second bids', blitzState.squadLimit === 5 && blitzState.settings.budget === 30 && blitzState.settings.bidTimer === 3);
   await friend.req('POST', `/api/rooms/${sprint}/join`, { teamId: 'CSK' });
@@ -52,7 +71,53 @@ try {
   check('the stars change from room to room', starsIn() !== starsIn());
   check('the Mega pool is the full list', buildPlayerOrder('mega').length === IPL_PLAYERS.length);
   await host.emit('auction:end', { roomId: sprint });
+
+  // ─── Room options ───
+  const quick = (await host.req('POST', '/api/rooms', { teamId: 'GT', auctionType: 'sprint5', quickPool: true })).data.id;
+  await host.join(quick);
+  await host.emit('bots:add', { roomId: quick, teamId: 'MI' });
+  await host.emit('bots:add', { roomId: quick, teamId: 'CSK' });
+  check('quick pool shows in the room state', host.state.quickPool === true);
+  check('unsold rounds are on by default', host.state.rotateUnsold === true && host.state.round === 1);
+  check('quick pool starts', (await host.emit('auction:start', { roomId: quick })).ok);
+  await host.waitFor(() => host.state.id === quick && host.state.status === 'active', 3000, 'quick pool active');
+  check('quick pool: 3 franchises × 5 + 10 = 25 players', host.state.playerOrder.length === 25 && new Set(host.state.playerOrder).size === 25, String(host.state.playerOrder.length));
+  check('the pool is fixed once the auction starts', /fixed/.test((await host.emit('settings:update', { roomId: quick, quickPool: false })).error || ''));
+  check('the overseas limit is fixed once the auction starts', /fixed/.test((await host.emit('settings:update', { roomId: quick, overseasLimit: 3 })).error || ''));
+  check('unsold rounds can still be switched during the auction', (await host.emit('settings:update', { roomId: quick, rotateUnsold: false })).ok);
+  await host.emit('auction:end', { roomId: quick });
+
+  const quickMega = (await host.req('POST', '/api/rooms', { teamId: 'GT', auctionType: 'mega', quickPool: true })).data.id;
+  await host.join(quickMega);
+  await host.emit('bots:add', { roomId: quickMega });
+  await host.emit('auction:start', { roomId: quickMega });
+  await host.waitFor(() => host.state.id === quickMega && host.state.status === 'active', 3000, 'quick mega active');
+  check('quick pool in Mega: 10 franchises × 25 + 10 = 260 players', host.state.playerOrder.length === 260, String(host.state.playerOrder.length));
+  await host.emit('auction:end', { roomId: quickMega });
+
+  const noOverseas = await host.req('POST', '/api/rooms', { teamId: 'GT', auctionType: 'sprint11', overseasLimit: 0, rotateUnsold: false });
+  const noOverseasState = (await host.join(noOverseas.data.id)).state;
+  check('a room can start with no overseas players allowed', noOverseasState.overseasLimit === 0 && noOverseasState.rotateUnsold === false);
+  check('an overseas limit above the squad size is refused', (await host.req('POST', '/api/rooms', { teamId: 'GT', auctionType: 'sprint5', overseasLimit: 6 })).status === 400);
+  check('overseas "no limit" (= squad size) is accepted', (await host.emit('settings:update', { roomId: noOverseas.data.id, overseasLimit: 11 })).ok);
+  check('only the host changes room options', /Only the host/.test((await friend.connect().then(() => friend.emit('settings:update', { roomId: noOverseas.data.id, quickPool: true }))).error || ''));
+  friend.disconnect();
   host.disconnect();
+
+  // A tiny quick-pool room left to run on its own while the bots play below: its
+  // host buys the first player, nobody bids on the rest, so a second round should start
+  const roundsHost = await guest('RoundsHost');
+  const roundsRoom = (await roundsHost.req('POST', '/api/rooms', { teamId: 'SRH', auctionType: 'sprint5', quickPool: true, bidTimer: 3 })).data.id;
+  await roundsHost.connect();
+  await roundsHost.join(roundsRoom);
+  await roundsHost.emit('bots:add', { roomId: roundsRoom, teamId: 'PBKS' });
+  await roundsHost.emit('bots:remove', { roomId: roundsRoom, teamId: 'PBKS' });
+  const roundsFriend = await guest('RoundsFriend');
+  await roundsFriend.req('POST', `/api/rooms/${roundsRoom}/join`, { teamId: 'LSG' });
+  await roundsHost.emit('auction:start', { roomId: roundsRoom });
+  await roundsHost.waitFor(() => roundsHost.state.status === 'active' && roundsHost.state.currentAuction?.status === 'bidding', 3000, 'rounds room live');
+  const roundsFirst = IPL_PLAYERS[roundsHost.state.playerOrder[0]];
+  check('the rounds room host opens the first lot', (await roundsHost.emit('bid:place', { roomId: roundsRoom, amount: roundsFirst.basePrice })).ok);
 
   const roomId = (await host.req('POST', '/api/rooms', { teamId: 'MI' })).data.id;
   await friend.req('POST', `/api/rooms/${roomId}/join`, {});
@@ -115,6 +180,14 @@ try {
   await host.emit('auction:end', { roomId });
   host.disconnect();
   friend.disconnect();
+
+  // Back to the rounds room: every lot has been called, so round 2 should be under way
+  check('unsold players come back in round 2', await eventually(roundsHost, () => roundsHost.state.round === 2, 120000, 'round 2'));
+  const round2 = roundsHost.state;
+  check('round 2 brings back the 19 unsold players', round2.playerOrder.length === 20 + 19 && !round2.playerOrder.slice(20).includes(round2.playerOrder[0]), String(round2.playerOrder.length));
+  check('the new round is announced', roundsHost.events.some(e => e.event === 'chat:message' && /Round 2: 19 unsold players come back/.test(e.payload.text)));
+  await roundsHost.emit('auction:end', { roomId: roundsRoom });
+  roundsHost.disconnect();
 } catch (err) {
   check('the run finished without an error', false, err.stack);
 } finally {

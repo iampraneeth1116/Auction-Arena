@@ -19,6 +19,12 @@ export const MODE_META = {
   blitz5: { label: '5-Player Blitz', short: 'Blitz 5', blurb: '5-player squads · ₹30 Cr purse · 3-second bids · 80 players', timer: 3, squad: 5, overseas: 2, pool: 80 },
 };
 
+// An overseas limit as large as the squad means there's no limit at all
+export const hasOverseasLimit = (limit, squadLimit) => limit < squadLimit;
+export const overseasLimitLabel = (limit, squadLimit) => (hasOverseasLimit(limit, squadLimit) ? String(limit) : 'No limit');
+// "3/4", or just "3" with no limit
+export const overseasUsage = (count, limit, squadLimit) => (hasOverseasLimit(limit, squadLimit) ? `${count}/${limit}` : String(count));
+
 // Seconds per bid the host can pick from
 export const BID_TIMER_PRESETS = [3, 5, 10, 15, 20, 30];
 

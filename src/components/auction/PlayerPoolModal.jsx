@@ -24,7 +24,8 @@ const PlayerPoolModal = ({ open, onClose, playerOrder, currentIndex, currentPlay
     roomTeams.forEach(t => t.squad.forEach(s => sold.set(s.id, { bid: s.bid, teamId: t.teamId })));
     const order = playerOrder?.length ? playerOrder : IPL_PLAYERS.map((_, i) => i);
     const currentPos = currentIndex ?? order.findIndex(i => IPL_PLAYERS[i].id === currentPlayerId);
-    // A player's latest place in the order decides where they're listed
+    // Unsold players can come back in a later round, so a player may appear twice:
+    // the latest appearance decides where they're listed
     const latest = new Map();
     order.forEach((index, pos) => latest.set(IPL_PLAYERS[index].id, { index, pos }));
     const result = { upcoming: [], sold: [], unsold: [] };

@@ -16,8 +16,10 @@ import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useAuction } from '../hooks/useAuction';
-import { ratingOf } from '../lib/catalog';
-import { MODE_META } from '../lib/format';
+import { auctionPoolSize, ratingOf } from '../lib/catalog';
+import { BID_TIMER_PRESETS, MODE_META, overseasLimitLabel } from '../lib/format';
+import Toggle from '../components/ui/Toggle';
+import OverseasLimitPicker from '../components/OverseasLimitPicker';
 import { cn } from '../lib/cn';
 import { TEAMS } from '../data/teams';
 import { IPL_PLAYERS } from '../data/players';
@@ -126,12 +128,21 @@ const HostTab = () => {
   const { createRoom } = useAuction();
   const [teamId, setTeamId] = useState(TEAMS[0].id);
   const [mode, setMode] = useState('mega');
+  const [quickPool, setQuickPool] = useState(false);
+  const [rotateUnsold, setRotateUnsold] = useState(true);
+  // null until the host picks one: then each mode's own value applies
+  const [timerChoice, setTimerChoice] = useState(null);
+  const [overseasChoice, setOverseasChoice] = useState(null);
   const [busy, setBusy] = useState(false);
+  const bidTimer = timerChoice ?? MODE_META[mode].timer;
+  const squadSize = MODE_META[mode].squad;
+  // A choice made for a bigger squad can't exceed this mode's squad size
+  const overseasLimit = Math.min(overseasChoice ?? MODE_META[mode].overseas, squadSize);
 
   const create = async () => {
     setBusy(true);
     try {
-      const id = await createRoom({ teamId, auctionType: mode });
+      const id = await createRoom({ teamId, auctionType: mode, quickPool, rotateUnsold, bidTimer, overseasLimit });
       navigate(`/lobby/${id}`);
     } catch (err) {
       toast({ message: err.message, tone: 'error' });
@@ -159,6 +170,49 @@ const HostTab = () => {
       </div>
       <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label="Format">
         {MODES.map(m => <ModeCard key={m} mode={m} selected={m === mode} onSelect={() => setMode(m)} />)}
+      </div>
+      <div>
+        <div className="mb-1.5 flex items-baseline justify-between">
+          <span className="font-display text-xs font-semibold uppercase tracking-[0.14em] text-haze">Time per bid</span>
+          <span className="text-xs text-haze">{bidTimer <= 5 ? 'Fast game' : 'Relaxed game'}</span>
+        </div>
+        <div className="grid grid-cols-6 gap-1" role="radiogroup" aria-label="Time per bid">
+          {BID_TIMER_PRESETS.map(seconds => (
+            <button
+              key={seconds}
+              type="button"
+              role="radio"
+              aria-checked={seconds === bidTimer}
+              onClick={() => setTimerChoice(seconds)}
+              className={cn(
+                'h-9 rounded-md border font-display text-sm font-semibold tabular transition-colors cursor-pointer',
+                seconds === bidTimer ? 'border-signal bg-signal/15 text-signal' : 'border-white/8 text-mist hover:border-ink-500',
+              )}
+            >
+              {seconds}s
+            </button>
+          ))}
+        </div>
+        <p className="mt-1.5 text-xs text-haze">Every bid restarts the clock. You can change this in the lobby too.</p>
+      </div>
+      <Toggle
+        checked={quickPool}
+        onChange={setQuickPool}
+        label="Quick pool"
+        description={`Players auctioned = franchises playing × ${squadSize} squad slots + 10 spares. With all ten teams that's ${auctionPoolSize({ auctionType: mode, quickPool: true, franchises: 10, squadLimit: squadSize })}, instead of ${auctionPoolSize({ auctionType: mode, quickPool: false })}.`}
+      />
+      <Toggle
+        checked={rotateUnsold}
+        onChange={setRotateUnsold}
+        label="Unsold come back"
+        description="After the last player, unsold players return in rounds until squads fill or a round sells nobody."
+      />
+      <div>
+        <div className="mb-1.5 flex items-baseline justify-between">
+          <span className="font-display text-xs font-semibold uppercase tracking-[0.14em] text-haze">Overseas per squad</span>
+          <span className="text-xs text-haze">{overseasLimitLabel(overseasLimit, squadSize)}{overseasLimit === MODE_META[mode].overseas ? ' (usual)' : ''}</span>
+        </div>
+        <OverseasLimitPicker value={overseasLimit} squadLimit={squadSize} defaultLimit={MODE_META[mode].overseas} onChange={setOverseasChoice} />
       </div>
       <Button size="lg" block slant icon={Gavel} loading={busy} onClick={create}>Create room</Button>
     </div>

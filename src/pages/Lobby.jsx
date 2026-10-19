@@ -8,12 +8,14 @@ import { useToast } from '../hooks/useToast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { TEAMS } from '../data/teams';
 import { TEAMS_BY_ID, auctionPoolSize } from '../lib/catalog';
-import { BID_TIMER_PRESETS, MODE_META, formatCrores } from '../lib/format';
+import { BID_TIMER_PRESETS, MODE_META, formatCrores, hasOverseasLimit, overseasLimitLabel } from '../lib/format';
 import { cn } from '../lib/cn';
 import PageShell from '../components/ui/PageShell';
 import Panel from '../components/ui/Panel';
 import Button from '../components/ui/Button';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
+import Toggle from '../components/ui/Toggle';
+import OverseasLimitPicker from '../components/OverseasLimitPicker';
 import Spinner from '../components/ui/Spinner';
 import Stat from '../components/ui/Stat';
 import Tag from '../components/ui/Tag';
@@ -84,9 +86,17 @@ const RoomHeader = ({ room, roomCode, isHost, hostName, managedCount, onlineCoun
           <Stat label="Mode" value={mode?.short ?? room.auctionType} />
           <Stat label="Purse" value={`₹${formatCrores(room.settings?.budget)} Cr`} hint="per franchise" />
           <Stat label="Squad" value={room.squadLimit} hint="players" />
-          <Stat label="Overseas" value={room.overseasLimit} hint="max per squad" />
+          <Stat
+            label="Overseas"
+            value={overseasLimitLabel(room.overseasLimit, room.squadLimit)}
+            hint={hasOverseasLimit(room.overseasLimit, room.squadLimit) ? 'max per squad' : 'any number'}
+          />
           <Stat label="Bid timer" value={`${room.settings?.bidTimer ?? 10}s`} hint="per bid" tone="signal" />
-          <Stat label="Players" value={auctionPoolSize(room.auctionType)} hint="in the pool" />
+          <Stat
+            label="Players"
+            value={auctionPoolSize({ auctionType: room.auctionType, quickPool: room.quickPool, franchises: managedCount, squadLimit: room.squadLimit })}
+            hint={room.quickPool ? 'quick pool' : 'in the pool'}
+          />
         </div>
       </div>
 
@@ -221,7 +231,9 @@ const WaitingPanel = ({ isHost, hostName, myTeam }) => (
   </Panel>
 );
 
-const HostControls = ({ room, busy, managedCount, openCount, botCount, canStart, onStart, onFillBots, onClearBots, onTimer }) => {
+const HostControls = ({
+  room, busy, managedCount, openCount, botCount, canStart, onStart, onFillBots, onClearBots, onTimer, onQuickPool, onRotate, onOverseas,
+}) => {
   const bidTimer = room.settings?.bidTimer;
   return (
     <Panel label="Host controls" accent="signal" bodyClassName="divide-y divide-white/6">
@@ -280,6 +292,36 @@ const HostControls = ({ room, busy, managedCount, openCount, botCount, canStart,
           })}
         </div>
         <p className="text-xs text-haze">The clock resets to this on every bid.</p>
+      </div>
+      <div className="p-4">
+        <Toggle
+          checked={Boolean(room.quickPool)}
+          onChange={onQuickPool}
+          disabled={Boolean(busy)}
+          label="Quick pool"
+          description={`Players auctioned = ${managedCount} franchise${managedCount === 1 ? '' : 's'} × ${room.squadLimit} squad slots + 10 spares = ${auctionPoolSize({ auctionType: room.auctionType, quickPool: true, franchises: managedCount, squadLimit: room.squadLimit })}, instead of ${auctionPoolSize({ auctionType: room.auctionType, quickPool: false })}. Counted when you press Start.`}
+        />
+        <Toggle
+          className="mt-4"
+          checked={room.rotateUnsold !== false}
+          onChange={onRotate}
+          disabled={Boolean(busy)}
+          label="Unsold come back"
+          description="After the last player, unsold players return in rounds until squads fill or a round sells nobody."
+        />
+        <div className="mt-4">
+          <div className="mb-1.5 flex items-baseline justify-between">
+            <span className="text-sm font-semibold text-snow">Overseas per squad</span>
+            <span className="text-xs text-haze">usual: {MODE_META[room.auctionType]?.overseas ?? room.overseasLimit}</span>
+          </div>
+          <OverseasLimitPicker
+            value={room.overseasLimit}
+            squadLimit={room.squadLimit}
+            defaultLimit={MODE_META[room.auctionType]?.overseas ?? room.overseasLimit}
+            onChange={onOverseas}
+            disabled={Boolean(busy)}
+          />
+        </div>
       </div>
     </Panel>
   );
@@ -348,10 +390,11 @@ const MembersPanel = ({ players, uid, isHost, onKick }) => {
 const RulesPanel = ({ room }) => {
   const rules = [
     { icon: Users, label: 'Squad', text: `Up to ${room.squadLimit} players` },
-    { icon: Plane, label: 'Overseas', text: `Max ${room.overseasLimit} per squad` },
+    { icon: Plane, label: 'Overseas', text: hasOverseasLimit(room.overseasLimit, room.squadLimit) ? `Max ${room.overseasLimit} per squad` : 'No limit' },
     { icon: Wallet, label: 'Purse', text: `₹${formatCrores(room.settings?.budget)} Cr per franchise` },
     { icon: TrendingUp, label: 'Bid steps', text: '+₹20 L under ₹5 Cr, +₹25 L above' },
     { icon: Timer, label: 'Clock', text: `Resets to ${room.settings?.bidTimer}s on every bid` },
+    { icon: Users, label: 'Unsold', text: room.rotateUnsold === false ? 'Out once unsold' : 'Come back in later rounds' },
   ];
   return (
     <Panel label="Rules" bodyClassName="grid grid-cols-1 gap-2 p-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -481,6 +524,16 @@ const Lobby = () => {
       const count = res?.removed?.length ?? 0;
       toast({ message: `${count} bot${count === 1 ? '' : 's'} left the room`, tone: 'success' });
     });
+
+  const setQuickPool = (quickPool) =>
+    run('quickPool', () => updateRoomSettings(roomCode, { quickPool }), () => {
+      toast({ message: quickPool ? 'Quick pool on: a shorter auction' : 'Quick pool off: the full pool for this mode', tone: 'success' });
+    });
+  const setRotate = (rotateUnsold) =>
+    run('rotate', () => updateRoomSettings(roomCode, { rotateUnsold }), () => {
+      toast({ message: rotateUnsold ? 'Unsold players will come back in later rounds' : 'Unsold players are out once unsold', tone: 'success' });
+    });
+  const setOverseas = (overseasLimit) => run('overseas', () => updateRoomSettings(roomCode, { overseasLimit }));
 
   const setBidTimer = (bidTimer) => run(`timer:${bidTimer}`, () => updateRoomSettings(roomCode, { bidTimer }));
 
@@ -623,6 +676,9 @@ const Lobby = () => {
               onFillBots={fillWithBots}
               onClearBots={clearBots}
               onTimer={setBidTimer}
+              onQuickPool={setQuickPool}
+              onRotate={setRotate}
+              onOverseas={setOverseas}
             />
           )}
           <MembersPanel players={players} uid={uid} isHost={isHost} onKick={setKickTarget} />

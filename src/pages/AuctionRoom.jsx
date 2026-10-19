@@ -18,7 +18,7 @@ import Button from '../components/ui/Button';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import Segmented from '../components/ui/Segmented';
 import Spinner from '../components/ui/Spinner';
-import { LiveTag } from '../components/ui/Tag';
+import Tag, { LiveTag } from '../components/ui/Tag';
 import Ticker, { TickerItem } from '../components/ui/Ticker';
 import TeamCrest from '../components/ui/TeamCrest';
 import { buttonClasses } from '../components/ui/styles';
@@ -107,6 +107,7 @@ const AuctionRoom = () => {
   const player = PLAYERS_BY_ID.get(live?.playerId);
   const playerOrder = useMemo(() => currentAuction?.playerOrder ?? [], [currentAuction?.playerOrder]);
   const lotIndex = currentAuction?.currentIndex ?? -1;
+  const round = currentAuction?.round ?? 1;
   const upNext = useMemo(
     () => (lotIndex >= 0 ? playerOrder.slice(lotIndex + 1, lotIndex + 5).map(i => IPL_PLAYERS[i]) : []),
     [playerOrder, lotIndex],
@@ -226,8 +227,11 @@ const AuctionRoom = () => {
           <span className="clip-slant-r bg-signal/15 py-1 pl-2.5 pr-5 font-display text-xs font-bold uppercase tracking-[0.18em] text-signal">
             On the block
           </span>
-          <span className="truncate font-display text-xs uppercase tracking-wider text-haze">
-            {player?.set}{lotIndex >= 0 && ` · Lot ${lotIndex + 1}/${playerOrder.length}`}
+          <span className="flex min-w-0 items-center gap-2">
+            {round > 1 && <Tag tone="gold">Round {round}</Tag>}
+            <span className="truncate font-display text-xs uppercase tracking-wider text-haze">
+              {player?.set}{lotIndex >= 0 && ` · Lot ${lotIndex + 1}/${playerOrder.length}`}
+            </span>
           </span>
         </div>
         {player && <LotCard player={player} lot={null} />}

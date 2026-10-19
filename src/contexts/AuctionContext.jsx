@@ -21,8 +21,8 @@ export const AuctionProvider = ({ children }) => {
 
   const getSyncedTime = useCallback(() => getServerTime(), []);
 
-  const createRoom = useCallback(async ({ teamId, auctionType = 'mega' }) => {
-    const { id } = await api('/api/rooms', { method: 'POST', body: { teamId, auctionType } });
+  const createRoom = useCallback(async ({ teamId, auctionType = 'mega', quickPool = false, rotateUnsold = true, bidTimer, overseasLimit }) => {
+    const { id } = await api('/api/rooms', { method: 'POST', body: { teamId, auctionType, quickPool, rotateUnsold, bidTimer, overseasLimit } });
     return id;
   }, []);
 
@@ -166,7 +166,7 @@ export const AuctionProvider = ({ children }) => {
     []
   );
 
-  // settings: { bidTimer } — anything left out keeps its current value
+  // settings: { bidTimer?, quickPool?, rotateUnsold?, overseasLimit? } — anything left out keeps its current value
   const updateRoomSettings = useCallback(
     (roomId, settings) => emitWithAck('settings:update', { roomId, ...settings }),
     []

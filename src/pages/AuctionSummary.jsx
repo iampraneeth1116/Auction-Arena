@@ -22,7 +22,7 @@ import EmptyState from '../components/ui/EmptyState';
 import { buttonClasses } from '../components/ui/styles';
 import { cn } from '../lib/cn';
 import { TEAMS_BY_ID, teamStrength, withPlayer } from '../lib/catalog';
-import { MODE_META, ROLES, ROLE_META, formatPrice, isOverseas } from '../lib/format';
+import { MODE_META, ROLES, ROLE_META, formatPrice, isOverseas, overseasUsage } from '../lib/format';
 import { shareElementAsImage } from '../lib/shareImage';
 
 const TABS = [
@@ -287,7 +287,7 @@ const SquadCard = ({ team, results, overseasLimit, sharing, onShare }) => {
       <div className="grid grid-cols-3 gap-3 border-b border-white/6 px-4 py-3 sm:grid-cols-5">
         <Stat size="sm" label="Purse left" value={formatPrice(team.budgetRemaining)} tone="volt" />
         <Stat size="sm" label="Spent" value={formatPrice(team.spent)} />
-        <Stat size="sm" label="Overseas" value={overseasLimit ? `${team.overseas}/${overseasLimit}` : team.overseas} />
+        <Stat size="sm" label="Overseas" value={overseasLimit ? overseasUsage(team.overseas, overseasLimit, results.squadLimit) : team.overseas} />
         <Stat size="sm" label="Players" value={`${team.players.length}/${results.squadLimit}`} />
         <Stat size="sm" label="Strength" value={team.strength.score} tone="signal" />
       </div>
