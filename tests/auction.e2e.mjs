@@ -1,6 +1,7 @@
-// End-to-end: auth, rooms, the live lobby, chat, host controls, server-run bidding,
-// pause / resume / end, restart recovery and the squad / overseas / purse rules,
-// against a real server and database.
+// End-to-end: auth and sessions, rooms, the live lobby, chat, host controls, server-run
+// bidding (latecomers and simultaneous bids included), pause / resume / end, restart
+// recovery, the squad / overseas / purse rules, and the fantasy league, its admin and
+// scoring, against a real server and database.
 import { TestClient, createChecker, startServer } from './helpers.mjs';
 import { prisma } from '../server/db.js';
 import { IPL_PLAYERS } from '../src/data/players.js';
@@ -47,6 +48,8 @@ try {
   check('tokens never appear in the JSON body', !JSON.stringify(reg.data).includes(alice.cookies.get('access_token')));
   const dup = await new TestClient(base).req('POST', '/api/auth/register', { name: 'A2', email: `ALICE+${ts}@test.dev`, password: 'password123' });
   check('duplicate email (any case) → 409', dup.status === 409, JSON.stringify(dup.data));
+  const short = await new TestClient(base).req('POST', '/api/auth/register', { name: 'S', email: `s+${ts}@test.dev`, password: 'short' });
+  check('a short password → 400 with a reason', short.status === 400 && /8 characters/.test(short.data?.error || ''), JSON.stringify(short.data));
   check('wrong password → 401', (await new TestClient(base).req('POST', '/api/auth/login', { email: `alice+${ts}@test.dev`, password: 'wrong-password' })).status === 401);
   check('correct password → 200', (await new TestClient(base).req('POST', '/api/auth/login', { email: `alice+${ts}@test.dev`, password: 'password123' })).status === 200);
   const forged = new TestClient(base);
@@ -121,6 +124,7 @@ try {
   check('only the host starts the auction', /Only the host/.test((await bob.emit('auction:start', { roomId })).error || ''));
   check('host starts the auction', (await alice.emit('auction:start', { roomId })).ok);
   check('everyone sees it go live', await eventually(bob, () => bob.state.status === 'active' && bob.state.currentAuction?.status === 'bidding', 3000, 'live'));
+  check('the first lot gets 15 seconds', Math.abs(bob.state.currentAuction.timerEndsAt - Date.now() - 15000) < 2000, String(bob.state.currentAuction.timerEndsAt - Date.now()));
   const order = bob.state.playerOrder;
   check('every player is in the order once', order.length === IPL_PLAYERS.length && new Set(order).size === IPL_PLAYERS.length);
   check('the marquee set comes first', IPL_PLAYERS[order[0]].set === 'Marquee Set 1');
@@ -145,6 +149,7 @@ try {
   const price = step(step(first.basePrice));
   check('bob raises again', (await bob.emit('bid:place', { roomId, amount: price })).ok);
   check('the lot sells when the clock runs out', await eventually(alice, () => alice.state.currentAuction?.status === 'sold', 6000, 'sold'));
+  check('a bid during the SOLD card is refused', /not accepting bids/.test((await alice.emit('bid:place', { roomId, amount: step(price) })).error || ''));
   const csk = alice.state.teams.find(t => t.teamId === 'CSK');
   check('bob gets the player at his price', csk.squad.length === 1 && csk.squad[0].id === first.id && csk.squad[0].bid === price, JSON.stringify(csk.squad));
   check("bob's purse goes down by the price", Math.abs(csk.budgetRemaining - (120 - price)) < 1e-9, String(csk.budgetRemaining));
@@ -301,6 +306,38 @@ try {
   const statAgain = await prisma.playerStat.findUnique({ where: { playerId: kohli.id } });
   check('the same match is never counted twice', again === 'refused' && statAgain.totalPoints === statAfter.totalPoints && statAgain.matches === statAfter.matches);
   for (const client of [host, full, abroad, skint]) client.disconnect();
+
+  // ─── Two bids at the same moment ───
+  const raceHost = await signedIn('RaceHost');
+  const racers = [await signedIn('RacerOne'), await signedIn('RacerTwo')];
+  const raceRoom = (await raceHost.req('POST', '/api/rooms', { teamId: 'MI', auctionType: 'sprint5' })).data.id;
+  await racers[0].req('POST', `/api/rooms/${raceRoom}/join`, { teamId: 'CSK' });
+  await racers[1].req('POST', `/api/rooms/${raceRoom}/join`, { teamId: 'RCB' });
+  for (const client of [raceHost, ...racers]) {
+    await client.connect();
+    await client.join(raceRoom);
+  }
+  await raceHost.emit('auction:start', { roomId: raceRoom });
+  await eventually(raceHost, () => raceHost.state.currentAuction?.status === 'bidding', 3000, 'race lot');
+  const racePrice = IPL_PLAYERS[raceHost.state.playerOrder[0]].basePrice;
+  const raceBids = await Promise.all(racers.map(client => client.emit('bid:place', { roomId: raceRoom, amount: racePrice })));
+  check('two bids at the same price at once: exactly one wins', raceBids.filter(r => r.ok).length === 1, JSON.stringify(raceBids));
+  await raceHost.emit('auction:end', { roomId: raceRoom });
+  for (const client of [raceHost, ...racers]) client.disconnect();
+
+  // ─── Session rotation and sign-out ───
+  const oldRefresh = alice.cookies.get('refresh_token');
+  const rotated = await alice.req('POST', '/api/auth/refresh');
+  check('a refresh hands out a new refresh token', rotated.status === 200 && alice.cookies.get('refresh_token') !== oldRefresh);
+  const replay = new TestClient(base);
+  replay.cookies.set('refresh_token', oldRefresh);
+  check('the old token straight back again → 409 retry', (await replay.req('POST', '/api/auth/refresh')).status === 409);
+  const currentRefresh = alice.cookies.get('refresh_token');
+  const signedOut = await alice.req('POST', '/api/auth/logout');
+  check('signing out clears both cookies', signedOut.status === 200 && !alice.cookies.has('access_token') && !alice.cookies.has('refresh_token'));
+  const afterSignOut = new TestClient(base);
+  afterSignOut.cookies.set('refresh_token', currentRefresh);
+  check('the refresh token is dead after signing out → 401', (await afterSignOut.req('POST', '/api/auth/refresh')).status === 401);
 } catch (err) {
   check('the run finished without an error', false, err.stack);
 } finally {

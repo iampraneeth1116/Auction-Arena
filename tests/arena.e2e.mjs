@@ -5,10 +5,11 @@
 import { TestClient, createChecker, startServer } from './helpers.mjs';
 import { prisma } from '../server/db.js';
 import { IPL_PLAYERS } from '../src/data/players.js';
-import { RATINGS, buildPlayerOrder, isOverseas, planUnsoldRound } from '../server/auctionRules.js';
+import { RATINGS, buildPlayerOrder, incompletePenalty, isOverseas, planUnsoldRound } from '../server/auctionRules.js';
 import { pickBotXI } from '../server/bots.js';
 import { teamStrength, xiOverseasCap } from '../src/lib/catalog.js';
 import { profileOf } from '../src/lib/playerProfile.js';
+import { nextBid } from '../src/lib/format.js';
 import { PLAYER_PROFILES } from '../src/data/playerProfiles.js';
 
 const PLAYERS = new Map(IPL_PLAYERS.map(p => [p.id, p]));
@@ -17,7 +18,7 @@ const SERVER_ENV = { GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '' };
 
 const { check, failedCount, printSummary } = createChecker();
 
-const server = await startServer({ port: PORT, env: SERVER_ENV });
+let server = await startServer({ port: PORT, env: SERVER_ENV });
 const base = server.url;
 const eventually = (client, predicate, ms, label) => client.waitFor(predicate, ms, label).then(() => true, () => false);
 
@@ -81,6 +82,7 @@ try {
   check('no new round after a round that sold nobody', planUnsoldRound({ playerOrder: roundOrder, roundStart: 0, soldPlayerIds: new Set(), buyers: buyer }) === null);
   check('no new round when no franchise has a free slot', planUnsoldRound({ playerOrder: roundOrder, roundStart: 0, soldPlayerIds: soldTwo, buyers: [{ openSlots: 0, budgetLakhs: 5000 }] }) === null);
   check('no new round when nobody can afford the cheapest player', planUnsoldRound({ playerOrder: roundOrder, roundStart: 0, soldPlayerIds: soldTwo, buyers: [{ openSlots: 3, budgetLakhs: 10 }] }) === null);
+  check('an unfinished squad loses 8 per empty XI place and 1 per missing reserve', incompletePenalty(8, 11) === 24 && incompletePenalty(11, 11) === 0 && incompletePenalty(20, 25) === 5 && incompletePenalty(3, 5) === 16);
 
   // ─── Modes and pools ───
   check('an unknown mode is refused', (await host.req('POST', '/api/rooms', { teamId: 'MI', auctionType: 'turbo' })).status === 400);
@@ -146,6 +148,7 @@ try {
   check('a room can start with no overseas players allowed', noOverseasState.overseasLimit === 0 && noOverseasState.rotateUnsold === false);
   check('an overseas limit above the squad size is refused', (await host.req('POST', '/api/rooms', { teamId: 'GT', auctionType: 'sprint5', overseasLimit: 6 })).status === 400);
   check('overseas "no limit" (= squad size) is accepted', (await host.emit('settings:update', { roomId: noOverseas.data.id, overseasLimit: 11 })).ok);
+  check('quick pool can be switched before the start', (await host.emit('settings:update', { roomId: noOverseas.data.id, quickPool: true })).ok);
   check('only the host changes room options', /Only the host/.test((await friend.connect().then(() => friend.emit('settings:update', { roomId: noOverseas.data.id, quickPool: true }))).error || ''));
   friend.disconnect();
   host.disconnect();
@@ -168,7 +171,12 @@ try {
   check('the room state says it is listed', (await lister.join(listed)).state.isPublic === true);
   check('visibility must be on or off', /Invalid visibility/.test((await lister.emit('settings:update', { roomId: listed, isPublic: 'yes' })).error || ''));
   check('the host can unlist a room', (await lister.emit('settings:update', { roomId: listed, isPublic: false })).ok && !(await openRooms()).some(r => r.id === listed));
+  check('a setting left out keeps its value', (await lister.join(listed)).state.settings.bidTimer === 3);
   await lister.emit('settings:update', { roomId: listed, isPublic: true });
+  await lister.emit('bots:add', { roomId: listed, teamId: 'SRH' });
+  const withBot = (await openRooms()).find(r => r.id === listed);
+  check('the listing counts bots and open franchises', withBot?.bots === 1 && withBot.openTeams === 8, JSON.stringify(withBot));
+  await lister.emit('bots:remove', { roomId: listed, teamId: 'SRH' });
 
   // One sale in each room: only the listed room's reaches Just sold
   for (const roomCode of [listed, unlisted]) {
@@ -263,7 +271,8 @@ try {
   check('removing a bot from a franchise a person manages is refused', /No bot/.test((await host.emit('bots:remove', { roomId, teamId: 'MI' })).error || ''));
 
   // ─── Bots bid on their own ───
-  await host.emit('settings:update', { roomId, bidTimer: 3 });
+  // Listed, so the test can check that bots' buys stay off the Just sold strip
+  await host.emit('settings:update', { roomId, bidTimer: 3, isPublic: true });
   check('the auction starts with 8 bots and 2 people', (await host.emit('auction:start', { roomId })).ok);
   check('bots cannot be added once the auction is running', /before the auction starts/.test((await host.emit('bots:add', { roomId, teamId: 'RCB' })).error || ''));
   check('bots cannot be removed once the auction is running', /before the auction starts/.test((await host.emit('bots:remove', { roomId })).error || ''));
@@ -271,6 +280,29 @@ try {
   check('a bot bids on its own', await eventually(host, () => host.state.currentAuction?.highBidderId?.startsWith('bot_'), 15000, 'a bot bid'));
   // A bots' bidding war on a star can run a few minutes: every bid resets the clock
   check('a bot wins a player', await eventually(host, () => host.state.teams.some(t => t.userId.startsWith('bot_') && t.squad.length > 0), 240000, 'a bot sale'));
+  const botBuys = new Set((await prisma.purchase.findMany({ where: { roomId, member: { isBot: true } }, select: { id: true } })).map(p => p.id));
+  const strip = (await new TestClient(base).req('GET', '/api/activity')).data;
+  check("bots' buys stay off the Just sold strip", botBuys.size > 0 && !strip.recentSignings.some(s => botBuys.has(s.id)), JSON.stringify(strip.recentSignings.slice(0, 3)));
+
+  // A person can still bid against bots
+  await eventually(host, () => host.state.currentAuction?.status === 'bidding', 10000, 'a lot open');
+  const contested = host.state.currentAuction;
+  const myBid = await friend.emit('bid:place', { roomId, amount: nextBid(contested.currentBid, PLAYERS.get(contested.playerId).basePrice) });
+  check('a person can bid while bots are bidding', myBid.ok || /price has moved|already the highest/.test(myBid.error || ''), JSON.stringify(myBid));
+
+  // Stop the server mid-auction: the bots pick up where they left off
+  host.disconnect();
+  friend.disconnect();
+  roundsHost.disconnect();
+  await server.stop();
+  server = await startServer({ port: PORT, env: SERVER_ENV });
+  await host.connect();
+  await host.join(roomId);
+  await roundsHost.connect();
+  // Chat that arrived while the server was down comes back with the room's history
+  const roundsHistory = (await roundsHost.join(roundsRoom)).messages ?? [];
+  const resumedAt = Date.now();
+  check('bots keep bidding after a server restart', await eventually(host, () => host.state.currentAuction?.highBidderId?.startsWith('bot_') && host.state.currentAuction.timerEndsAt > resumedAt, 30000, 'bot bid after restart'));
 
   // Let a few more lots go, then check every bot squad against the rules
   await eventually(host, () => host.state.currentIndex >= 5, 300000, 'five lots');
@@ -291,7 +323,8 @@ try {
   check('unsold players come back in round 2', await eventually(roundsHost, () => roundsHost.state.round === 2, 120000, 'round 2'));
   const round2 = roundsHost.state;
   check('round 2 brings back the 19 unsold players', round2.playerOrder.length === 20 + 19 && !round2.playerOrder.slice(20).includes(round2.playerOrder[0]), String(round2.playerOrder.length));
-  check('the new round is announced', roundsHost.events.some(e => e.event === 'chat:message' && /Round 2: 19 unsold players come back/.test(e.payload.text)));
+  const roundAnnounced = (text) => /Round 2: 19 unsold players come back/.test(text);
+  check('the new round is announced', roundsHost.events.some(e => e.event === 'chat:message' && roundAnnounced(e.payload.text)) || roundsHistory.some(m => roundAnnounced(m.text)));
   await roundsHost.emit('auction:end', { roomId: roundsRoom });
   roundsHost.disconnect();
 } catch (err) {
