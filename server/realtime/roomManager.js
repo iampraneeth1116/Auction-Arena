@@ -59,6 +59,7 @@ function toRuntime(row) {
       bannedUserIds: row.bannedUserIds,
       quickPool: row.quickPool,
       rotateUnsold: row.rotateUnsold,
+      hideUpcoming: row.hideUpcoming,
       round: row.round,
       roundStart: row.roundStart,
       createdAt: row.createdAt,
@@ -142,11 +143,15 @@ export function getSnapshot(rt) {
     overseasLimit: room.overseasLimit,
     settings: { bidTimer: room.bidTimer, budget: toCrores(room.budget) },
     isPublic: room.isPublic,
-    playerOrder: room.playerOrder,
+    // With upcoming players hidden, only the lots already called go out while the auction
+    // runs (the total still does), so the order can't be read from the room state either
+    playerOrder: room.hideUpcoming && room.status === 'active' ? room.playerOrder.slice(0, room.currentIndex + 1) : room.playerOrder,
+    lotCount: room.playerOrder.length,
     currentIndex: room.currentIndex,
     bannedPlayers: room.bannedUserIds,
     quickPool: room.quickPool,
     rotateUnsold: room.rotateUnsold,
+    hideUpcoming: room.hideUpcoming,
     round: room.round,
     spectatorCount: countSpectators(rt),
     players: members.map(m => ({
@@ -539,7 +544,7 @@ function checkOverseasLimit(limit, squadLimit) {
 
 // The host creates the room and claims a franchise in one step. bidTimer and
 // overseasLimit are optional: without them the mode's own values apply.
-export async function createRoom({ user, teamId, auctionType, isPublic = false, quickPool = false, rotateUnsold = true, bidTimer, overseasLimit }) {
+export async function createRoom({ user, teamId, auctionType, isPublic = false, quickPool = false, rotateUnsold = true, hideUpcoming = false, bidTimer, overseasLimit }) {
   const mode = AUCTION_MODES[auctionType];
   if (!mode) throw new HttpError(400, 'Unknown auction mode');
   if (!TEAMS_BY_ID.has(teamId)) throw new HttpError(400, 'Unknown franchise');
@@ -560,6 +565,7 @@ export async function createRoom({ user, teamId, auctionType, isPublic = false, 
           isPublic,
           quickPool,
           rotateUnsold,
+          hideUpcoming,
           playerOrder: [],
           members: {
             create: { userId: user.id, displayName: user.name, teamId, budgetRemaining: mode.budgetLakhs },
@@ -632,6 +638,7 @@ export function updateSettings(rt, userId, {
   isPublic = rt.room.isPublic,
   quickPool = rt.room.quickPool,
   rotateUnsold = rt.room.rotateUnsold,
+  hideUpcoming = rt.room.hideUpcoming,
   overseasLimit = rt.room.overseasLimit,
 }) {
   return exclusive(rt, async () => {
@@ -642,6 +649,7 @@ export function updateSettings(rt, userId, {
     if (typeof isPublic !== 'boolean') throw new HttpError(400, 'Invalid visibility');
     if (typeof quickPool !== 'boolean') throw new HttpError(400, 'Invalid pool setting');
     if (typeof rotateUnsold !== 'boolean') throw new HttpError(400, 'Invalid unsold setting');
+    if (typeof hideUpcoming !== 'boolean') throw new HttpError(400, 'Invalid upcoming-players setting');
     checkOverseasLimit(overseasLimit, rt.room.squadLimit);
     if (rt.room.status === 'completed') throw new HttpError(409, 'This auction has already ended.');
     // The pool is drawn when the auction starts, so it can't change afterwards
@@ -652,8 +660,8 @@ export function updateSettings(rt, userId, {
     if (overseasLimit !== rt.room.overseasLimit && rt.room.status !== 'waiting') {
       throw new HttpError(409, 'The overseas limit is fixed once the auction starts');
     }
-    await prisma.room.update({ where: { id: rt.room.id }, data: { bidTimer, isPublic, quickPool, rotateUnsold, overseasLimit } });
-    Object.assign(rt.room, { bidTimer, isPublic, quickPool, rotateUnsold, overseasLimit });
+    await prisma.room.update({ where: { id: rt.room.id }, data: { bidTimer, isPublic, quickPool, rotateUnsold, hideUpcoming, overseasLimit } });
+    Object.assign(rt.room, { bidTimer, isPublic, quickPool, rotateUnsold, hideUpcoming, overseasLimit });
     broadcast(rt);
   });
 }

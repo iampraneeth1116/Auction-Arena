@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-  Bot, BotOff, Check, Copy, Crown, Eye, Gavel, Globe, Hourglass, House, Loader2, Lock, MessageCircle, MessageSquare, Plane, RotateCw,
+  Bot, BotOff, Check, Copy, Crown, Eye, EyeOff, Gavel, Globe, Hourglass, House, Loader2, Lock, MessageCircle, MessageSquare, Plane, RotateCw,
   SearchX, Share2, ShieldX, Timer, TrendingUp, UserMinus, UserPlus, UserRound, Users, Wallet,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
@@ -272,7 +272,7 @@ const WaitingPanel = ({ isHost, hostName, myTeam }) => (
 );
 
 const HostControls = ({
-  room, busy, managedCount, openCount, botCount, canStart, onStart, onFillBots, onClearBots, onTimer, onListed, onQuickPool, onRotate, onOverseas,
+  room, busy, managedCount, openCount, botCount, canStart, onStart, onFillBots, onClearBots, onTimer, onListed, onQuickPool, onRotate, onHideUpcoming, onOverseas,
 }) => {
   const bidTimer = room.settings?.bidTimer;
   return (
@@ -357,6 +357,14 @@ const HostControls = ({
           disabled={Boolean(busy)}
           label="Unsold come back"
           description="After the last player, unsold players return in rounds until squads fill or a round sells nobody."
+        />
+        <Toggle
+          className="mt-4"
+          checked={Boolean(room.hideUpcoming)}
+          onChange={onHideUpcoming}
+          disabled={Boolean(busy)}
+          label="Hide upcoming players"
+          description="Nobody sees who's coming next, so every lot is a surprise. Players already called stay listed."
         />
         <div className="mt-4">
           <div className="mb-1.5 flex items-baseline justify-between">
@@ -450,6 +458,7 @@ const RulesPanel = ({ room }) => {
     { icon: TrendingUp, label: 'Bid steps', text: '+₹20 L under ₹5 Cr, +₹25 L above' },
     { icon: Timer, label: 'Clock', text: `Resets to ${room.settings?.bidTimer}s on every bid` },
     { icon: Users, label: 'Unsold', text: room.rotateUnsold === false ? 'Out once unsold' : 'Come back in later rounds' },
+    { icon: room.hideUpcoming ? EyeOff : Eye, label: 'Up next', text: room.hideUpcoming ? 'Hidden: every lot is a surprise' : 'Shown, so you can plan your purse' },
   ];
   return (
     <Panel label="Rules" className="order-5" bodyClassName="grid grid-cols-1 gap-2 p-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -605,6 +614,10 @@ const Lobby = () => {
   const setQuickPool = (quickPool) =>
     run('quickPool', () => updateRoomSettings(roomCode, { quickPool }), () => {
       toast({ message: quickPool ? 'Quick pool on: a shorter auction' : 'Quick pool off: the full pool for this mode', tone: 'success' });
+    });
+  const setHideUpcoming = (hideUpcoming) =>
+    run('hideUpcoming', () => updateRoomSettings(roomCode, { hideUpcoming }), () => {
+      toast({ message: hideUpcoming ? "Upcoming players are hidden: nobody will see who's next" : 'Upcoming players are shown again', tone: 'success' });
     });
   const setRotate = (rotateUnsold) =>
     run('rotate', () => updateRoomSettings(roomCode, { rotateUnsold }), () => {
@@ -799,6 +812,7 @@ const Lobby = () => {
               onListed={setListed}
               onQuickPool={setQuickPool}
               onRotate={setRotate}
+              onHideUpcoming={setHideUpcoming}
               onOverseas={setOverseas}
             />
           )}

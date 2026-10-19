@@ -455,6 +455,7 @@ const HostTab = () => {
   const [isPublic, setIsPublic] = useState(false);
   const [quickPool, setQuickPool] = useState(false);
   const [rotateUnsold, setRotateUnsold] = useState(true);
+  const [hideUpcoming, setHideUpcoming] = useState(false);
   // null until the host picks one: then each mode's own value applies
   const [timerChoice, setTimerChoice] = useState(null);
   const [overseasChoice, setOverseasChoice] = useState(null);
@@ -468,7 +469,7 @@ const HostTab = () => {
   const create = async () => {
     setBusy(true);
     try {
-      const id = await createRoom({ teamId, auctionType: mode, isPublic, quickPool, rotateUnsold, bidTimer, overseasLimit });
+      const id = await createRoom({ teamId, auctionType: mode, isPublic, quickPool, rotateUnsold, hideUpcoming, bidTimer, overseasLimit });
       navigate(`/lobby/${id}`);
     } catch (err) {
       toast({ message: err.message || 'Could not create the room. Please try again.', tone: 'error' });
@@ -548,6 +549,12 @@ const HostTab = () => {
           onChange={setRotateUnsold}
           label="Unsold come back"
           description="After the last player, unsold players return in rounds until squads fill or a round sells nobody."
+        />
+        <Toggle
+          checked={hideUpcoming}
+          onChange={setHideUpcoming}
+          label="Hide upcoming players"
+          description="Nobody sees who's coming next, so every lot is a surprise. Players already called stay listed."
         />
         <div>
           <div className="mb-1.5 flex items-baseline justify-between">

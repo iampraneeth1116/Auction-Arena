@@ -4,11 +4,9 @@ import PlayerPhoto from '../ui/PlayerPhoto';
 import RatingBadge from '../ui/RatingBadge';
 import Tag from '../ui/Tag';
 import { ratingOf } from '../../lib/catalog';
-import { ratingTier } from '../../lib/playerRating';
+import { TIER_LABELS, ratingTier } from '../../lib/playerRating';
 import { profileLines } from '../../lib/playerProfile';
-import { ROLE_META, formatPrice, isOverseas } from '../../lib/format';
-
-const statValue = (value) => (value === undefined || value === null || value === '-' || value === '' ? '—' : value);
+import { ROLE_META, formatPrice, formatStat, isOverseas } from '../../lib/format';
 
 // Bowlers lead with bowling numbers, everyone else with batting
 function statLine(player) {
@@ -21,12 +19,10 @@ function statLine(player) {
       ? [['Runs', s.runs], ['Strike rate', s.sr], ...bowling]
       : batting;
   return [['Matches', s.matches], ...lines]
-    .map(([label, value]) => ({ label, value: statValue(value) }))
+    .map(([label, value]) => ({ label, value: formatStat(value) }))
     .filter(({ value }) => value !== '—')
     .slice(0, 4);
 }
-
-const TIER_LABEL = { elite: 'Elite', star: 'Star', solid: 'Solid', squad: 'Squad player', prospect: 'Prospect' };
 
 // The player "on the block": photo, name, role, Arena Rating and key numbers
 const LotCard = ({ player, lot, lots }) => {
@@ -53,7 +49,7 @@ const LotCard = ({ player, lot, lots }) => {
           {player.name}
         </h2>
         <p className="mt-1.5 text-sm text-mist">
-          {TIER_LABEL[ratingTier(rating)]} · Base {formatPrice(player.basePrice)}
+          {TIER_LABELS[ratingTier(rating)]} · Base {formatPrice(player.basePrice)}
           {lot ? <span className="text-haze"> · Lot {lot}{lots ? ` of ${lots}` : ''}</span> : null}
         </p>
         {profileLines(player).length > 0 && (

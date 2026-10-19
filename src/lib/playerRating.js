@@ -93,3 +93,5 @@ export function buildRatings(players) {
 
 export const ratingTier = (rating) =>
   rating >= 90 ? 'elite' : rating >= 80 ? 'star' : rating >= 65 ? 'solid' : rating >= 50 ? 'squad' : 'prospect';
+
+export const TIER_LABELS = { elite: 'Elite', star: 'Star', solid: 'Solid', squad: 'Squad player', prospect: 'Prospect' };

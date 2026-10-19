@@ -1,6 +1,9 @@
 // Display helpers shared by every page. Prices are crores (the server sends crores).
 
 // ₹12.50 Cr above a crore, ₹75 L below it
+// A career number for display; the player list uses '-' (or nothing) where there isn't one
+export const formatStat = (value) => (value === undefined || value === null || value === '-' || value === '' ? '—' : value);
+
 export function formatPrice(crores) {
   const value = Number(crores) || 0;
   if (value > 0 && value < 1) return `₹${Math.round(value * 100)} L`;

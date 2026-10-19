@@ -21,14 +21,14 @@ Claim a franchise, bid against each other on 500+ real players, let bots fill th
 - **Server-run bidding** — the Node server owns the clock, checks every bid (purse, squad size, overseas quota) and sells players, so nobody can cheat from the browser and the auction carries on if the host closes their tab or the server restarts.
 - **Four formats** — Mega (25-player squads, ₹120 Cr, the full list), Classic 11 (11, ₹90 Cr, a 150-player pool), Sprint 5 (5, ₹60 Cr, an 80-player pool) and Blitz 5 (5, ₹30 Cr, 80 players, 3 seconds per bid). Any mode can use a **quick pool**: only (franchises taking part × squad size) + 10 players go under the hammer. **Unsold players come back** in later rounds until a round sells nobody, and the host can set **any overseas limit**, or none. Shorter pools are drawn at random from the top-rated players, with an Indian keeper for every franchise and enough Indians for every squad, so each room gets a different set of stars.
 - **Bots** — fill empty franchises with AI managers. Each plans its squad by role and by the jobs a T20 XI needs, values players by rating and the purse it has left, and has its own leaning. Friends can take a franchise over from its bot before the start.
-- **Broadcast-style room** — the player on the block with role-aware stats, a segmented countdown, a bid trail, the next four lots, a SOLD moment in the buyer's colours with their anthem, and a running ticker of sales.
+- **Broadcast-style room** — the player on the block with role-aware stats, a segmented countdown, a bid trail, the next four lots (tap one for its full player card, or the host can hide them so every lot is a surprise), a SOLD moment in the buyer's colours with their anthem, and a running ticker of sales.
 - **Bidding help** — a max-bid hint that keeps enough purse to fill your squad, live purse/squad/overseas read-outs, an "outbid" alert, and the **B** key to bid.
 - **Voice auctioneer** — announces each lot, every raise and the hammer; voice, pace and pitch are saved per device.
 
 **Rooms**
 - **Open rooms** — list your room publicly; anyone signed in can find it, join an open franchise or watch.
 - **Spectating** — watch any room with `?watch=1`. Arrive after the start and you can claim any franchise nobody holds.
-- **Host controls** — bid timer, visibility, quick pool, unsold rounds, overseas limit, pause/resume/end, removing people.
+- **Host controls** — bid timer, visibility, quick pool, unsold rounds, overseas limit, hiding upcoming players, pause/resume/end, removing people.
 - **Chat with GIFs**, presence, and a history of every auction you've played (remove one, with undo).
 
 **After the hammer**

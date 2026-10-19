@@ -60,6 +60,7 @@ model Room {
   bannedUserIds String[] @default([])
   quickPool     Boolean  @default(false) // pool sized to the game: franchises × squad limit + 10
   rotateUnsold  Boolean  @default(true) // unsold players come back in further rounds
+  hideUpcoming  Boolean  @default(false) // players don't see who's coming next while the auction runs
   round         Int      @default(1)
   roundStart    Int      @default(0) // index in playerOrder where the current round began
   createdAt     DateTime @default(now())

@@ -150,6 +150,20 @@ try {
   check('overseas "no limit" (= squad size) is accepted', (await host.emit('settings:update', { roomId: noOverseas.data.id, overseasLimit: 11 })).ok);
   check('quick pool can be switched before the start', (await host.emit('settings:update', { roomId: noOverseas.data.id, quickPool: true })).ok);
   check('only the host changes room options', /Only the host/.test((await friend.connect().then(() => friend.emit('settings:update', { roomId: noOverseas.data.id, quickPool: true }))).error || ''));
+
+  // Hidden upcoming players: while the auction runs, only the lots already called reach the room
+  const secret = (await host.req('POST', '/api/rooms', { teamId: 'GT', auctionType: 'sprint5', hideUpcoming: true })).data.id;
+  check('a room can hide upcoming players', (await host.join(secret)).state.hideUpcoming === true);
+  await host.emit('bots:add', { roomId: secret, teamId: 'MI' });
+  await host.emit('auction:start', { roomId: secret });
+  check('only the lots called so far are sent, with the total', await eventually(host, () =>
+    host.state.id === secret && host.state.status === 'active' && host.state.playerOrder.length === host.state.currentIndex + 1 && host.state.lotCount === 80,
+  3000, 'hidden order'), `${host.state.playerOrder?.length}/${host.state.lotCount}`);
+  check('only the host shows or hides them', /Only the host/.test((await friend.emit('settings:update', { roomId: secret, hideUpcoming: false })).error || ''));
+  check('the setting must be on or off', /Invalid upcoming/.test((await host.emit('settings:update', { roomId: secret, hideUpcoming: 'yes' })).error || ''));
+  check('the host can show them during the auction', (await host.emit('settings:update', { roomId: secret, hideUpcoming: false })).ok);
+  check('then the whole order is sent', await eventually(host, () => host.state.id === secret && host.state.playerOrder.length === 80, 3000, 'order shown'));
+  await host.emit('auction:end', { roomId: secret });
   friend.disconnect();
   host.disconnect();
 

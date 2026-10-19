@@ -31,6 +31,7 @@ import BidConsole from '../components/auction/BidConsole';
 import ResultBanner from '../components/auction/ResultBanner';
 import RoomSettingsModal from '../components/auction/RoomSettingsModal';
 import PlayerPoolModal from '../components/auction/PlayerPoolModal';
+import PlayerDetailModal from '../components/auction/PlayerDetailModal';
 import ParticipantsModal from '../components/auction/ParticipantsModal';
 import ClaimFranchise from '../components/auction/ClaimFranchise';
 import LiveBidBar from '../components/auction/LiveBidBar';
@@ -83,6 +84,8 @@ const AuctionRoom = () => {
   const [mobileTab, setMobileTab] = useState('stage');
   const [sideTab, setSideTab] = useState('feed');
   const [overlay, setOverlay] = useState(null); // 'pool' | 'people' | 'settings' | 'end'
+  // The player card opened from Up next; the player stays set while it closes
+  const [detail, setDetail] = useState({ open: false, player: null, note: '' });
   const wideScreen = useMediaQuery('(min-width: 1280px)');
 
   // Follow the room live. Arriving here doesn't make you a member: a latecomer only joins by
@@ -116,6 +119,9 @@ const AuctionRoom = () => {
   const player = PLAYERS_BY_ID.get(live?.playerId);
   const playerOrder = useMemo(() => currentAuction?.playerOrder ?? [], [currentAuction?.playerOrder]);
   const lotIndex = currentAuction?.currentIndex ?? -1;
+  // With upcoming players hidden the order only reaches this lot, so the total comes separately
+  const lotCount = currentAuction?.lotCount ?? playerOrder.length;
+  const hideUpcoming = Boolean(currentAuction?.hideUpcoming);
   const round = currentAuction?.round ?? 1;
   const upNext = useMemo(
     () => (lotIndex >= 0 ? playerOrder.slice(lotIndex + 1, lotIndex + 5).map(i => IPL_PLAYERS[i]) : []),
@@ -259,7 +265,7 @@ const AuctionRoom = () => {
           <span className="flex min-w-0 items-center gap-2">
             {round > 1 && <Tag tone="gold">Round {round}</Tag>}
             <span className="truncate font-display text-xs uppercase tracking-wider text-haze">
-              {player?.set}{lotIndex >= 0 && ` · Lot ${lotIndex + 1}/${playerOrder.length}`}
+              {player?.set}{lotIndex >= 0 && ` · Lot ${lotIndex + 1}/${lotCount}`}
             </span>
           </span>
         </div>
@@ -285,7 +291,12 @@ const AuctionRoom = () => {
         />
       </div>
 
-      <UpNext players={upNext} onShowAll={() => setOverlay('pool')} />
+      <UpNext
+        players={upNext}
+        hidden={hideUpcoming}
+        onSelect={(p, i) => setDetail({ open: true, player: p, note: `Lot ${lotIndex + i + 2} of ${lotCount}` })}
+        onShowAll={() => setOverlay('pool')}
+      />
     </div>
   );
 
@@ -421,6 +432,7 @@ const AuctionRoom = () => {
         currentIndex={lotIndex}
         currentPlayerId={live?.playerId}
         roomTeams={roomTeams}
+        hideUpcoming={hideUpcoming}
         footer={team ? (
           <LiveBidBar
             player={player}
@@ -440,14 +452,22 @@ const AuctionRoom = () => {
         isHost={isHost}
         onKick={removePerson}
       />
+      <PlayerDetailModal
+        open={detail.open}
+        player={detail.player}
+        note={detail.note}
+        onClose={() => setDetail(d => ({ ...d, open: false }))}
+      />
       <RoomSettingsModal
         open={overlay === 'settings'}
         onClose={() => setOverlay(null)}
         isHost={isHost}
         bidTimer={bidTimer}
         isPublic={currentAuction.isPublic}
+        hideUpcoming={hideUpcoming}
         onTimer={setBidTimer}
         onVisibility={(isPublic) => runHostAction(roomId => updateRoomSettings(roomId, { isPublic }))}
+        onHideUpcoming={(hidden) => runHostAction(roomId => updateRoomSettings(roomId, { hideUpcoming: hidden }))}
         voice={voice}
         sounds={sounds}
       />

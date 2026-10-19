@@ -656,7 +656,8 @@ const Bidding = () => (
         While you hold the top bid, you can&rsquo;t raise it. Wait for someone else to bid.
       </Note>
       <Note icon={Pause} title="Host controls" tone="gold">
-        The host can pause live bidding and resume it with a fresh clock, or end the auction early.
+        The host can pause live bidding and resume it with a fresh clock, end the auction early, or hide who&rsquo;s
+        coming next so every lot is a surprise.
       </Note>
     </div>
   </Section>
@@ -1152,7 +1153,7 @@ const FAQS = [
   },
   {
     q: 'What can the host do that others can’t?',
-    a: 'Change the bid timer and whether the room is public, add or remove bots before the start, start the auction, pause and resume live bidding, end it early, remove people from the room and regenerate the AI power rankings.',
+    a: 'Change the bid timer, whether the room is public and whether upcoming players are hidden, add or remove bots before the start, start the auction, pause and resume live bidding, end it early, remove people from the room and regenerate the AI power rankings.',
   },
 ];
 

@@ -15,6 +15,8 @@ const createSchema = z.object({
   isPublic: z.boolean().optional(),
   quickPool: z.boolean().optional(),
   rotateUnsold: z.boolean().optional(),
+  // Keep who's coming next from everyone while the auction runs
+  hideUpcoming: z.boolean().optional(),
   // 0 to the squad size (= no limit); checked against the mode when the room is made
   overseasLimit: z.number().int().min(0).max(25).optional(),
   // Seconds per bid; without it the mode's own default applies
@@ -23,8 +25,8 @@ const createSchema = z.object({
 const joinSchema = z.object({ teamId: z.string().optional() });
 
 router.post('/rooms', requireAuth, async (req, res) => {
-  const { teamId, auctionType, isPublic, quickPool, rotateUnsold, bidTimer, overseasLimit } = parseBody(createSchema, req.body);
-  const id = await createRoom({ user: req.user, teamId, auctionType, isPublic, quickPool, rotateUnsold, bidTimer, overseasLimit });
+  const { teamId, auctionType, isPublic, quickPool, rotateUnsold, hideUpcoming, bidTimer, overseasLimit } = parseBody(createSchema, req.body);
+  const id = await createRoom({ user: req.user, teamId, auctionType, isPublic, quickPool, rotateUnsold, hideUpcoming, bidTimer, overseasLimit });
   res.status(201).json({ id });
 });
 
