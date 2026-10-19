@@ -6,7 +6,7 @@ import { createRoom, getRuntime, joinRoom, selectTeam } from '../realtime/roomMa
 
 const router = Router();
 
-const createSchema = z.object({ teamId: z.string(), auctionType: z.enum(['mega']).default('mega') });
+const createSchema = z.object({ teamId: z.string(), auctionType: z.enum(['mega', 'sprint11', 'sprint5', 'blitz5']).default('mega') });
 const joinSchema = z.object({ teamId: z.string().optional() });
 
 router.post('/rooms', requireAuth, async (req, res) => {

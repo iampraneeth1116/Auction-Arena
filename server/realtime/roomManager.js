@@ -488,7 +488,7 @@ export async function createRoom({ user, teamId, auctionType }) {
           squadLimit: mode.squadLimit,
           overseasLimit: mode.overseasLimit,
           budget: mode.budgetLakhs,
-          bidTimer: DEFAULT_BID_TIMER,
+          bidTimer: mode.bidTimer ?? DEFAULT_BID_TIMER,
           playerOrder: [],
           members: {
             create: { userId: user.id, displayName: user.name, teamId, budgetRemaining: mode.budgetLakhs },
@@ -657,7 +657,12 @@ export function startAuction(rt, userId) {
     const managed = [...rt.members.values()].filter(m => m.teamId).length;
     if (managed < 2) throw new HttpError(409, 'At least 2 franchises need a manager to start');
 
-    const playerOrder = buildPlayerOrder();
+    // Shorter pools are drawn for the franchises actually taking part
+    const playerOrder = buildPlayerOrder(rt.room.auctionType, {
+      franchises: managed,
+      squadLimit: rt.room.squadLimit,
+      overseasLimit: rt.room.overseasLimit,
+    });
     await prisma.room.update({
       where: { id: rt.room.id },
       data: { status: 'active', playerOrder, currentIndex: 0 },

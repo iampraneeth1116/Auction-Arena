@@ -7,7 +7,7 @@ import { useAuction } from '../hooks/useAuction';
 import { useToast } from '../hooks/useToast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { TEAMS } from '../data/teams';
-import { TEAMS_BY_ID } from '../lib/catalog';
+import { TEAMS_BY_ID, auctionPoolSize } from '../lib/catalog';
 import { BID_TIMER_PRESETS, MODE_META, formatCrores } from '../lib/format';
 import { cn } from '../lib/cn';
 import PageShell from '../components/ui/PageShell';
@@ -80,12 +80,13 @@ const RoomHeader = ({ room, roomCode, isHost, hostName, managedCount, onlineCoun
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-x-4 gap-y-4 sm:grid-cols-5 sm:gap-x-8">
+        <div className="grid grid-cols-3 gap-x-4 gap-y-4 sm:grid-cols-6 sm:gap-x-8">
           <Stat label="Mode" value={mode?.short ?? room.auctionType} />
           <Stat label="Purse" value={`₹${formatCrores(room.settings?.budget)} Cr`} hint="per franchise" />
           <Stat label="Squad" value={room.squadLimit} hint="players" />
           <Stat label="Overseas" value={room.overseasLimit} hint="max per squad" />
           <Stat label="Bid timer" value={`${room.settings?.bidTimer ?? 10}s`} hint="per bid" tone="signal" />
+          <Stat label="Players" value={auctionPoolSize(room.auctionType)} hint="in the pool" />
         </div>
       </div>
 

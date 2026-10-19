@@ -17,6 +17,7 @@ import { useToast } from '../hooks/useToast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useAuction } from '../hooks/useAuction';
 import { ratingOf } from '../lib/catalog';
+import { MODE_META } from '../lib/format';
 import { cn } from '../lib/cn';
 import { TEAMS } from '../data/teams';
 import { IPL_PLAYERS } from '../data/players';
@@ -91,17 +92,46 @@ const SignInPanel = () => {
 
 // ─── Signed in: host a room or join one ───
 
+const MODES = ['mega', 'sprint11', 'sprint5', 'blitz5'];
+
+const ModeCard = ({ mode, selected, onSelect }) => {
+  const meta = MODE_META[mode];
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      onClick={onSelect}
+      className={cn(
+        'flex items-start gap-3 rounded-md border p-3 text-left transition-colors cursor-pointer',
+        selected ? 'border-signal bg-signal/10' : 'border-white/8 bg-ink-900/60 hover:border-ink-500',
+      )}
+    >
+      <span className={cn('w-9 shrink-0 font-display text-4xl font-bold leading-none tabular', selected ? 'text-signal' : 'text-ink-500')} aria-hidden>
+        {meta.squad}
+      </span>
+      <span className="min-w-0">
+        <span className="flex items-center gap-1.5 font-display text-base font-bold uppercase tracking-wide text-snow">
+          {meta.label}
+          {selected && <Check size={14} strokeWidth={3} className="text-signal" />}
+        </span>
+        <span className="mt-0.5 block text-xs leading-snug text-haze">{meta.blurb}</span>
+      </span>
+    </button>
+  );
+};
+
 const HostTab = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { createRoom } = useAuction();
   const [teamId, setTeamId] = useState(TEAMS[0].id);
+  const [mode, setMode] = useState('mega');
   const [busy, setBusy] = useState(false);
 
   const create = async () => {
     setBusy(true);
     try {
-      const id = await createRoom({ teamId });
+      const id = await createRoom({ teamId, auctionType: mode });
       navigate(`/lobby/${id}`);
     } catch (err) {
       toast({ message: err.message, tone: 'error' });
@@ -126,6 +156,9 @@ const HostTab = () => {
             {team.id === teamId && <Check size={12} className="absolute right-1 top-1 text-signal" />}
           </button>
         ))}
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label="Format">
+        {MODES.map(m => <ModeCard key={m} mode={m} selected={m === mode} onSelect={() => setMode(m)} />)}
       </div>
       <Button size="lg" block slant icon={Gavel} loading={busy} onClick={create}>Create room</Button>
     </div>

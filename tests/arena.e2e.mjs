@@ -1,8 +1,9 @@
-// End-to-end: bots. Adding and removing them in the lobby, then an auction where
-// they bid on their own under the same purse, squad and overseas rules as people.
+// End-to-end: the auction modes and their player pools, and bots: adding and
+// removing them in the lobby, then an auction where they bid on their own under
+// the same purse, squad and overseas rules as people.
 import { TestClient, createChecker, startServer } from './helpers.mjs';
 import { IPL_PLAYERS } from '../src/data/players.js';
-import { isOverseas } from '../server/auctionRules.js';
+import { RATINGS, buildPlayerOrder, isOverseas } from '../server/auctionRules.js';
 
 const PLAYERS = new Map(IPL_PLAYERS.map(p => [p.id, p]));
 const PORT = 3096;
@@ -24,6 +25,35 @@ const guest = async (name) => {
 try {
   const host = await guest('Host');
   const friend = await guest('Friend');
+
+  // ─── Modes and pools ───
+  check('an unknown mode is refused', (await host.req('POST', '/api/rooms', { teamId: 'MI', auctionType: 'turbo' })).status === 400);
+  const classic = (await host.req('POST', '/api/rooms', { teamId: 'MI', auctionType: 'sprint11' })).data.id;
+  const blitz = (await host.req('POST', '/api/rooms', { teamId: 'MI', auctionType: 'blitz5' })).data.id;
+  const sprint = (await host.req('POST', '/api/rooms', { teamId: 'MI', auctionType: 'sprint5' })).data.id;
+  await host.connect();
+  const classicState = (await host.join(classic)).state;
+  check('Classic 11: 11-player squads, 4 overseas, ₹90 Cr', classicState.squadLimit === 11 && classicState.overseasLimit === 4 && classicState.settings.budget === 90);
+  const blitzState = (await host.join(blitz)).state;
+  check('Blitz 5: 5-player squads, ₹30 Cr and 3-second bids', blitzState.squadLimit === 5 && blitzState.settings.budget === 30 && blitzState.settings.bidTimer === 3);
+  await friend.req('POST', `/api/rooms/${sprint}/join`, { teamId: 'CSK' });
+  await host.join(sprint);
+  check('Sprint 5 starts', (await host.emit('auction:start', { roomId: sprint })).ok);
+  await host.waitFor(() => host.state?.id === sprint && host.state.status === 'active', 3000, 'sprint live');
+  const order = host.state.playerOrder;
+  check('Sprint 5 auctions an 80-player pool, each player once', order.length === 80 && new Set(order).size === 80, String(order.length));
+  // Drawn from the top 120 by rating (80 × 1.5); a few may be swapped in to guarantee Indians and keepers
+  const cutoff = RATINGS.get([...IPL_PLAYERS].sort((a, b) => RATINGS.get(b.id) - RATINGS.get(a.id))[119].id);
+  const fromTop = order.filter(i => RATINGS.get(IPL_PLAYERS[i].id) >= cutoff).length;
+  check('the pool is drawn from the top-rated players', fromTop >= 60, String(fromTop));
+  const indianKeepers = order.filter(i => !isOverseas(IPL_PLAYERS[i]) && IPL_PLAYERS[i].role === 'Wicket-Keeper').length;
+  check('the pool has an Indian keeper for every franchise', indianKeepers >= 2, String(indianKeepers));
+  const starsIn = () => buildPlayerOrder('sprint5').filter(i => IPL_PLAYERS[i].set.startsWith('Marquee')).sort().join();
+  check('the stars change from room to room', starsIn() !== starsIn());
+  check('the Mega pool is the full list', buildPlayerOrder('mega').length === IPL_PLAYERS.length);
+  await host.emit('auction:end', { roomId: sprint });
+  host.disconnect();
+
   const roomId = (await host.req('POST', '/api/rooms', { teamId: 'MI' })).data.id;
   await friend.req('POST', `/api/rooms/${roomId}/join`, {});
   await host.connect();

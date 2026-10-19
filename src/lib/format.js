@@ -10,9 +10,13 @@ export function formatPrice(crores) {
 // 12.5 / 0.75 — for tight spaces next to a "Cr" label
 export const formatCrores = (crores) => (Number(crores) || 0).toFixed(2).replace(/\.?0+$/, '') || '0';
 
-// squad: squad limit · overseas: overseas players allowed per squad
+// timer: the seconds per bid a new room of this mode starts with
+// squad: squad limit · overseas: overseas players allowed per squad · pool: players auctioned (null = the full list)
 export const MODE_META = {
-  mega: { label: 'Mega Auction', short: 'Mega', blurb: '25-player squads · ₹120 Cr purse · full player list', squad: 25, overseas: 8 },
+  mega: { label: 'Mega Auction', short: 'Mega', blurb: '25-player squads · ₹120 Cr purse · full player list', timer: 10, squad: 25, overseas: 8, pool: null },
+  sprint11: { label: '11-Player Classic', short: 'Classic 11', blurb: '11-player squads · ₹90 Cr purse · 150 players', timer: 10, squad: 11, overseas: 4, pool: 150 },
+  sprint5: { label: '5-Player Sprint', short: 'Sprint 5', blurb: '5-player squads · ₹60 Cr purse · 80 players', timer: 10, squad: 5, overseas: 2, pool: 80 },
+  blitz5: { label: '5-Player Blitz', short: 'Blitz 5', blurb: '5-player squads · ₹30 Cr purse · 3-second bids · 80 players', timer: 3, squad: 5, overseas: 2, pool: 80 },
 };
 
 // Seconds per bid the host can pick from

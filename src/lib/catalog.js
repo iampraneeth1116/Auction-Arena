@@ -1,12 +1,16 @@
 import { IPL_PLAYERS } from '../data/players.js';
 import { TEAMS } from '../data/teams.js';
 import { buildRatings } from './playerRating.js';
+import { MODE_META } from './format.js';
 
 export const PLAYERS_BY_ID = new Map(IPL_PLAYERS.map(p => [p.id, p]));
 export const TEAMS_BY_ID = new Map(TEAMS.map(t => [t.id, t]));
 export const RATINGS = buildRatings(IPL_PLAYERS);
 
 export const ratingOf = (playerId) => RATINGS.get(playerId) ?? 0;
+
+// How many players go under the hammer in this mode
+export const auctionPoolSize = (auctionType) => MODE_META[auctionType]?.pool ?? IPL_PLAYERS.length;
 
 // A squad entry from the server ({ id, bid }) joined with the player's details
 export const withPlayer = (entry) => {
