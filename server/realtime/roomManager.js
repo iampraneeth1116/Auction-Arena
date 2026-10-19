@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { prisma } from '../db.js';
 import { IPL_PLAYERS } from '../../src/data/players.js';
 import { HttpError } from '../validation.js';
-import { botHesitates, botName, botOffer, botThinkMs, botUserId, readMarket, rollMood } from '../bots.js';
+import { botHesitates, botName, botOffer, botThinkMs, botUserId, pickBotXI, readMarket, rollMood } from '../bots.js';
 import {
   AUCTION_MODES,
   DEFAULT_BID_TIMER,
@@ -374,6 +374,21 @@ async function completeRoom(rt, text) {
   rt.room.status = 'completed';
   await addMessage(rt, { text });
   broadcast(rt);
+  await pickBotFantasyTeams(rt);
+}
+
+// Bots enter the room's fantasy league too, so people have someone to beat
+async function pickBotFantasyTeams(rt) {
+  const data = botsIn(rt).flatMap(bot => {
+    const xi = pickBotXI(squadOf(rt, bot).map(p => PLAYERS_BY_ID.get(p.playerId)));
+    return xi ? [{ roomId: rt.room.id, userId: bot.userId, userName: bot.displayName, teamId: bot.teamId, ...xi }] : [];
+  });
+  if (data.length === 0) return;
+  try {
+    await prisma.fantasySquad.createMany({ data, skipDuplicates: true });
+  } catch (err) {
+    console.error(`[room ${rt.room.id}] could not pick bot fantasy teams`, err);
+  }
 }
 
 // ─── Bids ───

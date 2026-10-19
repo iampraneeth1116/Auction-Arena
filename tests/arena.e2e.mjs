@@ -4,6 +4,7 @@
 import { TestClient, createChecker, startServer } from './helpers.mjs';
 import { IPL_PLAYERS } from '../src/data/players.js';
 import { RATINGS, buildPlayerOrder, isOverseas, planUnsoldRound } from '../server/auctionRules.js';
+import { pickBotXI } from '../server/bots.js';
 import { teamStrength, xiOverseasCap } from '../src/lib/catalog.js';
 import { profileOf } from '../src/lib/playerProfile.js';
 import { PLAYER_PROFILES } from '../src/data/playerProfiles.js';
@@ -28,6 +29,19 @@ const guest = async (name) => {
 try {
   const host = await guest('Host');
   const friend = await guest('Friend');
+
+  // ─── Bot fantasy XI (pure function) ───
+  const overseasPool = IPL_PLAYERS.filter(p => p.country !== 'IND');
+  const indianPool = IPL_PLAYERS.filter(p => p.country === 'IND' && p.role !== 'Wicket-Keeper');
+  const indianKeeper = IPL_PLAYERS.find(p => p.role === 'Wicket-Keeper' && p.country === 'IND' && p.set !== 'Marquee Set 1');
+  const botSquad = [...overseasPool.slice(0, 8), ...indianPool.slice(0, 16), indianKeeper];
+  const botXI = pickBotXI(botSquad);
+  const botXIPlayers = botXI.players.map(id => PLAYERS.get(id));
+  check('bot XI has 11 players with at most 4 overseas', botXIPlayers.length === 11 && botXIPlayers.filter(p => p.country !== 'IND').length <= 4);
+  check('bot XI always fields a keeper it bought', botXIPlayers.some(p => p.role === 'Wicket-Keeper'));
+  check('bot captain and vice-captain are different XI players', botXI.captain !== botXI.viceCaptain && botXI.players.includes(botXI.captain) && botXI.players.includes(botXI.viceCaptain));
+  check('bot impact player comes from the bench', Boolean(botXI.impactPlayer) && !botXI.players.includes(botXI.impactPlayer));
+  check('no fantasy XI for a bot with fewer than 5 players', pickBotXI(botSquad.slice(0, 4)) === null);
 
   // ─── Playing profiles and best-XI judging (pure functions) ───
   const badProfiles = Object.entries(PLAYER_PROFILES).filter(([id, text]) => {

@@ -220,6 +220,24 @@ try {
     await eventually(host, () => host.state.currentAuction?.status === 'unsold', 20000, 'unsold');
   }
   check('every rule came up within ten lots', tested.squad && tested.budget && tested.overseas, JSON.stringify(tested));
+
+  // ─── Fantasy XI ───
+  const fantasyPath = `/api/rooms/${rulesRoom}/fantasy/squad`;
+  const fullIds = late.filter(p => !isOverseas(p)).slice(0, 25).map(p => p.id);
+  const abroadIds = late.filter(isOverseas).slice(0, 8).map(p => p.id);
+  check('a fantasy XI needs at least 5 players', /at least 5/.test((await full.req('PUT', fantasyPath, { players: fullIds.slice(0, 4), captain: fullIds[0], viceCaptain: fullIds[1] })).data?.error || ''));
+  check('only players you bought can be picked', /players you bought/.test((await full.req('PUT', fantasyPath, { players: abroadIds.slice(0, 5), captain: abroadIds[0], viceCaptain: abroadIds[1] })).data?.error || ''));
+  check('at most 4 overseas in the XI', /4 overseas/.test((await abroad.req('PUT', fantasyPath, { players: abroadIds.slice(0, 5), captain: abroadIds[0], viceCaptain: abroadIds[1] })).data?.error || ''));
+  check('captain and vice-captain must differ', /two different players/.test((await full.req('PUT', fantasyPath, { players: fullIds.slice(0, 11), captain: fullIds[0], viceCaptain: fullIds[0] })).data?.error || ''));
+  check('the impact player must come from outside the XI', /outside the XI/.test((await full.req('PUT', fantasyPath, { players: fullIds.slice(0, 11), captain: fullIds[0], viceCaptain: fullIds[1], impactPlayer: fullIds[2] })).data?.error || ''));
+  const saved = await full.req('PUT', fantasyPath, { players: fullIds.slice(0, 11), captain: fullIds[0], viceCaptain: fullIds[1], impactPlayer: fullIds[11] });
+  check('a valid XI is saved', saved.status === 200 && saved.data.squad.players.length === 11, JSON.stringify(saved.data));
+  const league = await host.req('GET', `/api/rooms/${rulesRoom}/fantasy`);
+  check('the league shows the saved XI to the room', league.status === 200 && league.data.squads.some(sq => sq.teamId === 'CSK' && sq.captain === fullIds[0]) && typeof league.data.playerStats === 'object');
+  check('someone without a franchise cannot enter', /part of a franchise/.test((await (await signedIn('NoTeam')).req('PUT', fantasyPath, { players: fullIds.slice(0, 5), captain: fullIds[0], viceCaptain: fullIds[1] })).data?.error || ''));
+  check('fantasy player stats load', (await host.req('GET', '/api/fantasy/player-stats')).status === 200);
+  check('admin endpoints are forbidden for everyone else', (await host.req('POST', `/api/admin/player-stats/${fullIds[0]}/match`, { points: 10 })).status === 403);
+  check('me says a guest is not an admin', (await host.req('GET', '/api/auth/me')).data.user.isAdmin === false);
   for (const client of [host, full, abroad, skint]) client.disconnect();
 } catch (err) {
   check('the run finished without an error', false, err.stack);

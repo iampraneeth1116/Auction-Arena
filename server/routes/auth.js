@@ -7,7 +7,7 @@ import { prisma } from '../db.js';
 import { config } from '../config.js';
 import { parseBody } from '../validation.js';
 import { REFRESH_COOKIE, clearAuthCookies, endSession, rotateSession, startSession } from '../auth/tokens.js';
-import { requireAuth } from '../auth/middleware.js';
+import { isAdminUser, requireAuth } from '../auth/middleware.js';
 
 const router = Router();
 
@@ -45,6 +45,7 @@ export const publicUser = (user) => ({
   email: user.email,
   avatarUrl: user.avatarUrl,
   isGuest: user.isGuest,
+  isAdmin: isAdminUser(user),
 });
 
 router.post('/register', authLimiter, async (req, res) => {

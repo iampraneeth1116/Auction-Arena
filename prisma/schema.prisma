@@ -27,6 +27,7 @@ model User {
 
   refreshTokens RefreshToken[]
   memberships   RoomMember[]
+  fantasySquads FantasySquad[]
 }
 
 // Opaque refresh tokens, stored only as SHA-256 hashes. Rotated on every use.
@@ -64,8 +65,9 @@ model Room {
 
   members      RoomMember[]
   purchases    Purchase[]
-  messages     Message[]
-  powerRanking PowerRanking?
+  messages      Message[]
+  fantasySquads FantasySquad[]
+  powerRanking  PowerRanking?
 }
 
 // AI squad ratings for a completed auction, generated once and reused
@@ -122,4 +124,30 @@ model Message {
   createdAt DateTime @default(now())
 
   @@index([roomId, createdAt])
+}
+
+// Each manager's fantasy XI for a finished auction, picked from the players they bought
+model FantasySquad {
+  id           String   @id @default(cuid())
+  roomId       String
+  room         Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userName     String
+  teamId       String
+  players      String[]
+  captain      String
+  viceCaptain  String
+  impactPlayer String?
+  updatedAt    DateTime @updatedAt
+
+  @@unique([roomId, userId])
+}
+
+// A player's fantasy points across real matches, shared by every room
+model PlayerStat {
+  playerId    String   @id
+  totalPoints Float    @default(0)
+  matches     Int      @default(0)
+  updatedAt   DateTime @updatedAt
 }

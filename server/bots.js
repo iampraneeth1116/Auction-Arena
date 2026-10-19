@@ -184,3 +184,39 @@ export function botThinkMs(bidTimerSeconds, remainingMs, eagerness) {
   }
   return Math.max(400, Math.min(wanted, remainingMs - 600));
 }
+
+const XI_SIZE = 11;
+const MAX_OVERSEAS_IN_XI = 4;
+const MIN_FANTASY_PLAYERS = 5;
+
+// A bot's fantasy XI once the auction ends: its best-rated players within the
+// overseas limit, always with a keeper if it bought one. Captain and vice-captain
+// are its two best; the impact player is the best one left on the bench.
+export function pickBotXI(squadPlayers) {
+  if (squadPlayers.length < MIN_FANTASY_PLAYERS) return null;
+  const ranked = [...squadPlayers].sort((a, b) => (RATINGS.get(b.id) ?? 0) - (RATINGS.get(a.id) ?? 0));
+
+  const xi = [];
+  for (const player of ranked) {
+    if (xi.length === XI_SIZE) break;
+    if (isOverseas(player) && xi.filter(isOverseas).length >= MAX_OVERSEAS_IN_XI) continue;
+    xi.push(player);
+  }
+
+  const keeper = ranked.find(p => p.role === 'Wicket-Keeper' && !xi.includes(p));
+  if (keeper && !xi.some(p => p.role === 'Wicket-Keeper') && xi.length === XI_SIZE) {
+    // Swap the weakest Indian player out (keeps the overseas count legal)
+    const out = [...xi].reverse().find(p => !isOverseas(p) || isOverseas(keeper));
+    if (out) xi.splice(xi.indexOf(out), 1, keeper);
+  }
+
+  const overseasInXI = xi.filter(isOverseas).length;
+  const impact = ranked.find(p => !xi.includes(p) && (!isOverseas(p) || overseasInXI < MAX_OVERSEAS_IN_XI));
+  const byRating = [...xi].sort((a, b) => (RATINGS.get(b.id) ?? 0) - (RATINGS.get(a.id) ?? 0));
+  return {
+    players: xi.map(p => p.id),
+    captain: byRating[0].id,
+    viceCaptain: byRating[1].id,
+    impactPlayer: impact?.id ?? null,
+  };
+}
