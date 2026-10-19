@@ -13,9 +13,11 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.VITE_GOOGLE_CLIENT_ID': JSON.stringify(env.GOOGLE_CLIENT_ID || ''),
     },
     server: {
-      // Proxy to the Node server so development is same-origin, like production
+      // Proxy to the Node server so development is same-origin, like production: the API,
+      // and the live room connection (WebSocket upgrades included)
       proxy: {
         '/api': apiTarget,
+        '/socket.io': { target: apiTarget, ws: true },
       },
     },
   };
