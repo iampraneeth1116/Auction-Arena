@@ -2,13 +2,16 @@ import React, { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Bot, Crown, Gavel, Gem, House, ListOrdered, LogIn, Plane, SearchX, Share2, Sparkles, TriangleAlert, Trophy, Users } from 'lucide-react';
+import {
+  Bot, Crown, Gavel, Gem, House, ListOrdered, LogIn, Plane, SearchX, Share2, Sparkles, TriangleAlert, Trophy, Users, Zap,
+} from 'lucide-react';
 import { useAuction } from '../hooks/useAuction';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import SquadPoster from '../components/SquadPoster';
 import PowerRankings from '../components/PowerRankings';
+import FantasyDashboard from '../components/fantasy/FantasyDashboard';
 import PageShell from '../components/ui/PageShell';
 import Panel from '../components/ui/Panel';
 import Tag, { LiveTag } from '../components/ui/Tag';
@@ -31,6 +34,7 @@ const TABS = [
   { id: 'squads', label: 'Squads', icon: Users },
   { id: 'top', label: 'Top buys', icon: Gavel },
   { id: 'ai', label: 'AI rankings', icon: Sparkles },
+  { id: 'fantasy', label: 'Fantasy', icon: Zap },
 ];
 const TAB_IDS = new Set(TABS.map(t => t.id));
 
@@ -564,6 +568,9 @@ const AuctionSummary = () => {
           )}
           {tab === 'top' && <TopBuysTab results={results} />}
           {tab === 'ai' && <PowerRankings auctionId={roomId} isHost={currentAuction.hostId === user.uid} />}
+          {tab === 'fantasy' && (
+            <FantasyDashboard auctionId={roomId} user={user} roomTeams={roomTeams} currentAuction={currentAuction} />
+          )}
         </motion.div>
       </div>
 
