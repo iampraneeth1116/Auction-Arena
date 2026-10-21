@@ -883,6 +883,11 @@ const Ratings = () => (
           stronger skill counts 70%, the other 30%. A short record keeps a player near the middle of their band. So the
           best bowler in the marquee set rates as highly as the best batter.
         </p>
+        <p className="text-sm leading-relaxed text-mist">
+          Last comes the outlook for the next IPL. For about a hundred players, recent IPL and T20 international form,
+          retirements, injuries and bans move the rating up or down: Vaibhav Sooryavanshi gains 16 after his 2026
+          Orange Cap, and a player who has retired loses 40. Their player card shows the change and the reason.
+        </p>
         <div aria-label="Rating bands by auction tier">
           <div className="flex flex-wrap gap-1.5" aria-hidden>
             {[['Marquee', '82–96'], ['Set 1', '74–88'], ['Set 2', '68–82'], ['Set 3', '62–76'], ['Set 4', '55–70'], ['Capped overseas', '50–85'], ['Uncapped', '32–62']].map(([tierName, band]) => (
@@ -891,7 +896,7 @@ const Ratings = () => (
               </span>
             ))}
           </div>
-          <p className="mt-1.5 text-xs text-haze">The band comes from the tier; career stats decide where in the band a player lands.</p>
+          <p className="mt-1.5 text-xs text-haze">The band comes from the tier; career stats decide where in the band a player lands, and the outlook can move them past it.</p>
         </div>
       </div>
       <ul className="space-y-1.5" aria-label="Rating tiers">
@@ -1010,7 +1015,7 @@ const RankingAnatomy = () => (
 );
 
 const PowerRankings = () => (
-  <Section id="power-rankings" title="AI power rankings" intro="Once the auction is over, an AI analyst rates every franchise’s squad.">
+  <Section id="power-rankings" title="AI power rankings" intro="Once the auction is over, an AI analyst previews how every franchise’s squad would do in the next IPL.">
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
         <Note icon={Sparkles} title="Made once per room">
@@ -1018,14 +1023,16 @@ const PowerRankings = () => (
           saved, so everyone sees the same rankings. The host can regenerate them for a second opinion.
         </Note>
         <Note icon={Scale} title="What it judges" tone="volt">
-          The best XI&rsquo;s combination (openers, top and middle order, a finisher, a left/right mix, power hitters
-          and an anchor, a keeper, pace and spin, powerplay and death bowling), player quality from Arena Ratings, value for money against base price, and
-          depth for the squad limit. All-rounders count as both batting and bowling options. The final score is half the
+          Each squad as a side for the next IPL: its best XI&rsquo;s Arena Ratings, which include form and outlook
+          (about half), the XI&rsquo;s combination (openers, a finisher, a left/right mix, power and an anchor, a
+          keeper, pace and spin, powerplay and death bowling), then bench cover and value. Strengths and weaknesses
+          name the players involved. All-rounders count as both batting and bowling options. The final score is half the
           AI&rsquo;s view and half Arena Strength, and a squad short of players loses points either way: 8 for each empty
           place in the XI, 1 for each missing reserve.
         </Note>
         <Note icon={ShieldCheck} title="What it’s sent" tone="gold">
-          Each franchise&rsquo;s best XI with ratings, prices and playing profiles, its gaps and a summary of its bench.
+          Each franchise&rsquo;s best XI with ratings, prices, playing profiles and next-IPL outlook notes, its gaps and
+          a summary of its bench.
           Manager names are never sent to the AI.
         </Note>
         <Note icon={Check} title="Checked before it’s shown">

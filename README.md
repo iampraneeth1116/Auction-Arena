@@ -32,9 +32,9 @@ Claim a franchise, bid against each other on 500+ real players, let bots fill th
 - **Chat with GIFs**, presence, and a history of every auction you've played (remove one, with undo).
 
 **After the hammer**
-- **Arena Rating** — every player gets a 1–99 rating. Their auction tier (marquee, Set 1 … uncapped) sets the band and their T20 career places them inside it, compared with others in the same role, so the best bowler rates as highly as the best batter.
+- **Arena Rating** — every player gets a 1–99 rating. Their auction tier (marquee, Set 1 … uncapped) sets the band and their T20 career places them inside it, compared with others in the same role, so the best bowler rates as highly as the best batter. A curated next-IPL outlook (`src/data/playerOutlook.js`) then moves about a hundred players up or down for recent IPL and T20I form, retirements, injuries and bans, and their player card shows why.
 - **Arena Strength** — every squad is scored on the best legal playing XI it can field (an empty place counts as zero) and its depth. The XI's combination counts too: a keeper, openers and a finisher, a left/right mix and an anchor up top, power hitters, pace and spin, and powerplay and death bowling, using a playing profile for each player.
-- **AI power rankings** — an AI analyst (Groq) grades each franchise on balance, quality, value and depth. The final score is half the AI's view and half Arena Strength, and an unfinished squad loses points either way.
+- **AI power rankings** — an AI analyst (Groq) previews how each franchise would do in the next IPL, grading XI quality, balance, depth and value. The final score is half the AI's view and half Arena Strength, and an unfinished squad loses points either way.
 - **Squad posters** — share any squad as an image.
 - **Fantasy league** — pick an XI, captain (2×), vice-captain (1.5×) and impact player from the players you bought; a daily job scores real IPL matches from CricAPI.
 
@@ -65,7 +65,7 @@ Claim a franchise, bid against each other on 500+ real players, let bots fill th
 ### How AI power rankings work
 
 - Available on the results page once an auction is complete. Any manager in the room can generate them; the result is saved, so the AI runs once per room. The host can regenerate.
-- The server sends Groq only data from the game's own player list: each franchise's best XI with ratings, prices and playing profiles, the gaps found in it, and a summary of its bench. Manager names are never sent, so nobody can slip instructions into the prompt through their display name.
+- The server sends Groq only data from the game's own player list: each franchise's best XI with ratings, prices, playing profiles and next-IPL outlook notes, the gaps found in it, and a summary of its bench. Manager names are never sent, so nobody can slip instructions into the prompt through their display name.
 - The model must answer in a strict JSON schema, and the server still validates the reply: unknown teams are dropped, scores are clamped to 0–100, text is trimmed, and a "best buy" is only shown if that team really bought the player.
 
 ## 🚀 Getting Started
@@ -192,7 +192,7 @@ auction-arena/
 │   │   └── fantasy/           # Fantasy XI picker and leaderboard
 │   ├── hooks/                 # useAuth, useAuction, voice auctioneer, room sounds, local settings
 │   ├── lib/                   # API and socket clients, Arena Rating, best-XI judging, formatting, image sharing
-│   └── data/                  # Players, playing profiles and teams
+│   └── data/                  # Players, playing profiles, next-IPL outlook and teams
 ├── tests/                     # End-to-end tests (npm test)
 └── .github/workflows/         # CI, and the daily fantasy update
 ```
