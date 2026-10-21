@@ -152,7 +152,7 @@ const GifTray = ({ onPick, onClose, sendingId }) => {
 };
 
 // Room chat: a scrolling message list over a composer. Fills its parent's height.
-const TextChat = ({ roomId, canChat = true, className }) => {
+const RoomChat = ({ roomId, canChat = true, className }) => {
   const { messages, sendMessage, currentAuction } = useAuction();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -355,4 +355,4 @@ const TextChat = ({ roomId, canChat = true, className }) => {
   );
 };
 
-export default TextChat;
+export default RoomChat;

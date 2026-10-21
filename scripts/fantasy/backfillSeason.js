@@ -1,8 +1,8 @@
-import { prisma } from '../server/db.js';
-import { ApiLimitError, collectMatchPlayers, fetchFromCricApi, saveMatch } from './lib/fantasyScoring.js';
+import { prisma } from '../../server/db.js';
+import { ApiLimitError, collectMatchPlayers, fetchFromCricApi, saveMatch } from '../lib/fantasyScoring.js';
 
 // One-off catch-up: scores every finished IPL 2026 match not already scored.
-// Safe to re-run: matches recorded by this script or autoUpdateFantasy.js are skipped.
+// Safe to re-run: matches recorded by this script or dailyUpdate.js are skipped.
 // Run with `npm run fantasy:backfill` (needs DATABASE_URL and CRICKET_API_KEY).
 
 const CRICKET_API_KEY = process.env.CRICKET_API_KEY;

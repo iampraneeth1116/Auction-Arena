@@ -19,12 +19,12 @@ import Panel from '../components/ui/Panel';
 import Button from '../components/ui/Button';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import Segmented from '../components/ui/Segmented';
-import PageLoader from '../components/PageLoader';
+import PreShow from '../components/PreShow';
 import Tag, { LiveTag } from '../components/ui/Tag';
 import Ticker, { TickerItem } from '../components/ui/Ticker';
 import TeamCrest from '../components/ui/TeamCrest';
 import { buttonClasses } from '../components/ui/styles';
-import TextChat from '../components/TextChat';
+import RoomChat from '../components/RoomChat';
 import LotCard from '../components/auction/LotCard';
 import PriceBoard from '../components/auction/PriceBoard';
 import BidConsole from '../components/auction/BidConsole';
@@ -232,7 +232,7 @@ const AuctionRoom = () => {
   };
 
   // ─── Before the stage ───
-  if (authLoading) return <PageLoader />;
+  if (authLoading) return <PreShow />;
   if (!user) return <Navigate to={`/lobby/${id}${wantsToWatch ? '?watch=1' : ''}`} replace />;
   if (roomError?.code === 'kicked' || currentAuction?.bannedPlayers?.includes(user.uid)) {
     return <FullScreenNotice icon={ShieldAlert} title="Removed from room">The host removed you from this auction.</FullScreenNotice>;
@@ -240,7 +240,7 @@ const AuctionRoom = () => {
   if (roomError && !currentAuction) {
     return <FullScreenNotice icon={Radio} title="Room not found">There's no auction with the code {id}. Check the code and try again.</FullScreenNotice>;
   }
-  if (loading || !currentAuction) return <PageLoader />;
+  if (loading || !currentAuction) return <PreShow />;
   if (currentAuction.status === 'waiting') return <Navigate to={`/lobby/${id}${wantsToWatch ? '?watch=1' : ''}`} replace />;
   if (currentAuction.status === 'completed') return <Navigate to={`/summary/${id}`} replace />;
   // Arrived after the start without a franchise: claim a free one or watch
@@ -375,7 +375,7 @@ const AuctionRoom = () => {
           <div className={cn('lg:hidden', mobileTab !== 'teams' && 'hidden')}>{teamBoard}</div>
           <div className={cn('lg:hidden', mobileTab !== 'feed' && 'hidden')}><ActivityFeed messages={messages} /></div>
           {mobileTab === 'chat' && (
-            <div className="h-[calc(100dvh-7.5rem)] lg:hidden"><TextChat roomId={id} canChat={Boolean(team)} /></div>
+            <div className="h-[calc(100dvh-7.5rem)] lg:hidden"><RoomChat roomId={id} canChat={Boolean(team)} /></div>
           )}
         </main>
 
@@ -384,7 +384,7 @@ const AuctionRoom = () => {
           <Segmented options={sideOptions} value={activeSideTab} onChange={setSideTab} stretch className="h-11 shrink-0 border-b border-white/6 px-2" />
           <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
             {activeSideTab === 'feed' && <ActivityFeed messages={messages} />}
-            {activeSideTab === 'chat' && <TextChat roomId={id} canChat={Boolean(team)} className="h-full" />}
+            {activeSideTab === 'chat' && <RoomChat roomId={id} canChat={Boolean(team)} className="h-full" />}
             {activeSideTab === 'teams' && teamBoard}
           </div>
         </aside>

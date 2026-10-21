@@ -5,15 +5,15 @@ import { ToastProvider } from './components/ui/Toast';
 import { AuthProvider } from './contexts/AuthContext';
 import { AuctionProvider } from './contexts/AuctionContext';
 import ScrollToTop from './components/ScrollToTop';
-import PageLoader from './components/PageLoader';
-import LandingPage from './pages/LandingPage';
+import PreShow from './components/PreShow';
+import Home from './pages/Home';
 
 // Everything except the landing page loads when first visited
 const Lobby = lazy(() => import('./pages/Lobby'));
 const AuctionRoom = lazy(() => import('./pages/AuctionRoom'));
-const AuctionSummary = lazy(() => import('./pages/AuctionSummary'));
+const Results = lazy(() => import('./pages/Results'));
 const FantasyAdmin = lazy(() => import('./pages/FantasyAdmin'));
-const GameGuide = lazy(() => import('./pages/GameGuide'));
+const HowToPlay = lazy(() => import('./pages/HowToPlay'));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
@@ -31,13 +31,13 @@ function App() {
         <ToastProvider>
           <AuthProvider>
             <AuctionProvider>
-              <Suspense fallback={<PageLoader />}>
+              <Suspense fallback={<PreShow />}>
                 <Routes>
-                  <Route path="/" element={<LandingPage />} />
+                  <Route path="/" element={<Home />} />
                   <Route path="/lobby/:id" element={<Lobby />} />
                   <Route path="/auction/:id" element={<AuctionRoom />} />
-                  <Route path="/summary/:id" element={<AuctionSummary />} />
-                  <Route path="/guide" element={<GameGuide />} />
+                  <Route path="/summary/:id" element={<Results />} />
+                  <Route path="/guide" element={<HowToPlay />} />
                   <Route path="/privacy" element={<PrivacyPolicy />} />
                   <Route path="/admin/fantasy" element={<FantasyAdmin />} />
                   <Route path="*" element={<NotFound />} />

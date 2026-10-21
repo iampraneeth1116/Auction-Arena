@@ -24,10 +24,10 @@ const TIP_MS = 4800;
 
 // The branded loader. With `intro` it plays the pre-show and waits for the player to enter;
 // otherwise it's the everyday loader for page and data loads.
-const PageLoader = ({ intro = false, onEnter }) => (intro ? <PreShow onEnter={onEnter} /> : <CompactLoader />);
+const PreShow = ({ intro = false, onEnter }) => (intro ? <Sting onEnter={onEnter} /> : <CompactLoader />);
 
 // A short broadcast-style sting: logo reveal, one tip at a time, then "Enter the arena"
-const PreShow = ({ onEnter }) => {
+const Sting = ({ onEnter }) => {
   const [tipIndex, setTipIndex] = useState(() => new Date().getSeconds() % TIPS.length);
   const [ready, setReady] = useState(false);
   const entered = useRef(false);
@@ -203,4 +203,4 @@ const CompactLoader = () => (
   </div>
 );
 
-export default PageLoader;
+export default PreShow;

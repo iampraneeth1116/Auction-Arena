@@ -20,7 +20,7 @@ import TeamCrest from '../components/ui/TeamCrest';
 import PlayerPhoto from '../components/ui/PlayerPhoto';
 import RatingBadge from '../components/ui/RatingBadge';
 import Segmented from '../components/ui/Segmented';
-import PageLoader from '../components/PageLoader';
+import PreShow from '../components/PreShow';
 import Button from '../components/ui/Button';
 import EmptyState from '../components/ui/EmptyState';
 import { buttonClasses } from '../components/ui/styles';
@@ -433,7 +433,7 @@ const Centered = ({ children }) => (
   </PageShell>
 );
 
-const AuctionSummary = () => {
+const Results = () => {
   const { id = '' } = useParams();
   const roomId = id.toUpperCase();
   const { user } = useAuth();
@@ -481,7 +481,7 @@ const AuctionSummary = () => {
         </Centered>
       );
     }
-    return <PageLoader />;
+    return <PreShow />;
   }
 
   const results = buildResults(currentAuction, roomTeams, user.uid);
@@ -591,4 +591,4 @@ const AuctionSummary = () => {
   );
 };
 
-export default AuctionSummary;
+export default Results;

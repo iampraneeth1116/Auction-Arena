@@ -11,6 +11,8 @@ import { teamStrength, xiOverseasCap } from '../src/lib/catalog.js';
 import { profileOf } from '../src/lib/playerProfile.js';
 import { nextBid } from '../src/lib/format.js';
 import { PLAYER_PROFILES } from '../src/data/playerProfiles.js';
+import { PLAYER_OUTLOOK } from '../src/data/playerOutlook.js';
+import { buildRatings } from '../src/lib/playerRating.js';
 
 const PLAYERS = new Map(IPL_PLAYERS.map(p => [p.id, p]));
 const PORT = 3096;
@@ -54,6 +56,18 @@ try {
       (style !== undefined && !/^(agg|bal|anc)$/.test(style));
   });
   check('every playing profile is for a real player and well formed', badProfiles.length === 0, JSON.stringify(badProfiles.slice(0, 3)));
+
+  // ─── Next-IPL outlook (pure rules) ───
+  const fromCareer = buildRatings(IPL_PLAYERS, {});
+  const sample = IPL_PLAYERS.find(p => fromCareer.get(p.id) < 80);
+  const lifted = buildRatings(IPL_PLAYERS, { [sample.id]: { change: 6, note: 'test' } });
+  check('an outlook entry moves a rating by its change', lifted.get(sample.id) === fromCareer.get(sample.id) + 6 && lifted.get(IPL_PLAYERS[0].id) === fromCareer.get(IPL_PLAYERS[0].id));
+  const star = IPL_PLAYERS.find(p => fromCareer.get(p.id) >= 90);
+  check('ratings never go past 99', buildRatings(IPL_PLAYERS, { [star.id]: { change: 20, note: 'test' } }).get(star.id) === 99);
+  const badOutlook = Object.entries(PLAYER_OUTLOOK).filter(([id, o]) =>
+    !PLAYERS.has(id) || !Number.isInteger(o.change) || o.change === 0 || o.change < -40 || o.change > 25 || typeof o.note !== 'string' || o.note.length < 10);
+  check('every outlook entry is for a real player with a change and a reason', badOutlook.length === 0, JSON.stringify(badOutlook.slice(0, 3)));
+  check('the ratings in play include the outlook', Object.entries(PLAYER_OUTLOOK).every(([id, o]) => RATINGS.get(id) === Math.max(1, Math.min(99, fromCareer.get(id) + o.change))));
   const byName = (name) => IPL_PLAYERS.find(p => p.name === name);
   const bumrah = profileOf(byName('Jasprit Bumrah'));
   check('a known profile reads correctly', bumrah.bowling === 'pace' && bumrah.phases.includes('death') && bumrah.order === 'tail');

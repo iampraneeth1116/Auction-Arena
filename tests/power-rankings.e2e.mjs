@@ -5,6 +5,7 @@ import { TestClient, createChecker, startServer } from './helpers.mjs';
 import { prisma } from '../server/db.js';
 import { IPL_PLAYERS } from '../src/data/players.js';
 import { teamStrength } from '../src/lib/catalog.js';
+import { outlookOf } from '../src/lib/playerRating.js';
 import { blendTeamScore, incompletePenalty } from '../server/auctionRules.js';
 
 const PLAYERS = new Map(IPL_PLAYERS.map(p => [p.id, p]));
@@ -116,6 +117,10 @@ try {
     JSON.stringify([...sent.body.response_format.json_schema.schema.properties.rankings.items.properties.teamId.enum].sort()) === JSON.stringify(['CSK', 'MI']));
   check('reasoning_effort low for gpt-oss', sent?.body.reasoning_effort === 'low');
   check('prompt includes the squads from our player data', sent?.raw.includes(PLAYERS.get('jasprit-bumrah').name) && sent.raw.includes(PLAYERS.get('arshdeep-singh').name));
+  check('prompt previews the squads for the next IPL season', /next IPL/.test(sent?.raw || ''));
+  const outlookNotes = ['jasprit-bumrah', 'suryakumar-yadav', 'arshdeep-singh'].map(outlookOf).filter(Boolean).map(o => o.note);
+  const promptText = (sent?.body.messages ?? []).map(m => m.content).join('\n');
+  check("squad players' outlook notes reach the AI", outlookNotes.every(note => promptText.includes(`outlook: ${note}`)), JSON.stringify(outlookNotes));
   check('prompt tells the AI how many players each squad is missing', /missingPlayers/.test(sent?.raw || '') && /incomplete/.test(sent?.raw || ''));
   check('prompt gives Arena Ratings, team balance and the all-rounder rule', ['arenaRating', 'arenaStrength', 'battingOptions', 'bowlingOptions', 'All-rounders bat AND bowl'].every(t => sent?.raw.includes(t)));
   check('prompt sends each best XI with its gaps and playing profiles', ['TEAM MI', 'Best XI:', 'XI gaps:', 'Bench:', 'RA pace'].every(t => sent?.raw.includes(t)));

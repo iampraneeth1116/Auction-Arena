@@ -199,7 +199,7 @@ function useActiveSection(ids) {
 
 // ─── Page ───
 
-const GameGuide = () => {
+const HowToPlay = () => {
   useDocumentTitle('Game guide');
   const { hash } = useLocation();
   const [active, setActive] = useActiveSection(SECTION_IDS);
@@ -1173,4 +1173,4 @@ const Faq = () => (
   </Section>
 );
 
-export default GameGuide;
+export default HowToPlay;

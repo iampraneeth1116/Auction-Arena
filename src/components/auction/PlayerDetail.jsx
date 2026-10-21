@@ -1,10 +1,10 @@
 import React from 'react';
-import { Plane } from 'lucide-react';
+import { Plane, TrendingDown, TrendingUp } from 'lucide-react';
 import PlayerPhoto from '../ui/PlayerPhoto';
 import RatingBadge from '../ui/RatingBadge';
 import Tag from '../ui/Tag';
 import { ratingOf } from '../../lib/catalog';
-import { TIER_LABELS, ratingTier } from '../../lib/playerRating';
+import { TIER_LABELS, outlookOf, ratingTier } from '../../lib/playerRating';
 import { profileLines } from '../../lib/playerProfile';
 import { ROLE_META, formatPrice, formatStat, isOverseas } from '../../lib/format';
 
@@ -24,6 +24,7 @@ const labelClasses = 'font-display text-[11px] font-semibold uppercase tracking-
 const PlayerDetail = ({ player, note }) => {
   const rating = ratingOf(player.id);
   const profile = profileLines(player);
+  const outlook = outlookOf(player.id);
   const stats = player.stats || {};
 
   return (
@@ -60,6 +61,21 @@ const PlayerDetail = ({ player, note }) => {
           <dd className="truncate font-display text-lg font-bold">{player.set}</dd>
         </div>
       </dl>
+
+      {outlook && (
+        <section className={`rounded-md border px-3 py-2.5 ${outlook.change >= 0 ? 'border-volt/30 bg-volt/[0.06]' : 'border-flare/30 bg-flare/[0.06]'}`}>
+          <h4 className={`${labelClasses} flex items-center gap-1.5`}>
+            {outlook.change >= 0
+              ? <TrendingUp size={13} className="text-volt" aria-hidden />
+              : <TrendingDown size={13} className="text-flare" aria-hidden />}
+            Next IPL outlook
+            <span className={`tabular ${outlook.change >= 0 ? 'text-volt' : 'text-flare'}`}>
+              {outlook.change > 0 ? '+' : ''}{outlook.change} rating
+            </span>
+          </h4>
+          <p className="mt-1 text-sm text-snow">{outlook.note}</p>
+        </section>
+      )}
 
       <section>
         <h4 className={labelClasses}>Playing profile</h4>

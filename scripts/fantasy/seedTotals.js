@@ -1,5 +1,5 @@
-import { prisma } from '../server/db.js';
-import { findPlayer, normalizeName } from './lib/fantasyScoring.js';
+import { prisma } from '../../server/db.js';
+import { findPlayer, normalizeName } from '../lib/fantasyScoring.js';
 
 // Seeds players' fantasy totals from the hand-compiled table below: each listed player's
 // totals are replaced, and players not in the table are left untouched. For filling a

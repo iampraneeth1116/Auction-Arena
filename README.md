@@ -135,7 +135,7 @@ Open http://localhost:5173.
 | `npm run db:deploy` | Apply migrations to the database in `DATABASE_URL` |
 | `npm run fantasy:update` | Score IPL matches finished since the last run (daily job) |
 | `npm run fantasy:backfill` | Score every finished IPL 2026 match not yet processed |
-| `npm run fantasy:upload` | Seed player totals from the table in `scripts/uploadConsolidatedPoints.js` |
+| `npm run fantasy:upload` | Seed player totals from the table in `scripts/fantasy/seedTotals.js` |
 | `npm test` | The three end-to-end suites below |
 
 ## 🧪 Testing
@@ -183,9 +183,9 @@ auction-arena/
 │   ├── routes/                # /api/auth, rooms & history, fantasy & admin, power rankings, activity
 │   ├── auth/                  # JWT + refresh-token sessions, cookie auth middleware
 │   └── ai/groq.js             # Groq client (structured JSON output)
-├── scripts/                   # CricAPI fantasy-points jobs (shared logic in scripts/lib)
+├── scripts/                   # Fantasy-points jobs in scripts/fantasy (daily update, season backfill, seeding totals); shared scoring in scripts/lib
 ├── src/
-│   ├── pages/                 # Landing, Lobby, AuctionRoom, AuctionSummary, GameGuide, PrivacyPolicy, FantasyAdmin, NotFound
+│   ├── pages/                 # Home, Lobby, AuctionRoom, Results, HowToPlay, PrivacyPolicy, FantasyAdmin, NotFound
 │   ├── components/
 │   │   ├── ui/                # Design system: panels, buttons, tags, crests, ratings, modals, ticker, toasts
 │   │   ├── auction/           # The live room: lot card, price board, bid console, team board, feed

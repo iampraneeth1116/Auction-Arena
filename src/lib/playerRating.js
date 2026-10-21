@@ -1,3 +1,5 @@
+import { PLAYER_OUTLOOK } from '../data/playerOutlook.js';
+
 // Arena Rating: a 1–99 score for every player.
 //
 // Career stats in the player list are patchy, so they can't carry a rating on
@@ -5,7 +7,9 @@
 // reflects their real-world standing) sets a band, and their stats place them
 // inside it by comparison with every other player in the same role. The best
 // bowler in the marquee set therefore rates as highly as the best batter, and an
-// all-rounder is judged on both suits.
+// all-rounder is judged on both suits. Last comes the player's outlook for the next
+// IPL (data/playerOutlook.js): recent form, breakouts, decline and availability,
+// which career numbers can't see.
 
 const num = (value) => {
   const n = typeof value === 'number' ? value : parseFloat(value);
@@ -80,16 +84,21 @@ function placement(player, batScores, bowlScores) {
   return bat; // batters and keepers
 }
 
-// Ratings for a whole player list, keyed by player id. Stats are compared across the list passed in.
-export function buildRatings(players) {
+// Ratings for a whole player list, keyed by player id. Stats are compared across the list
+// passed in; outlook adjustments (by default the reviewed list) are applied last.
+export function buildRatings(players, outlook = PLAYER_OUTLOOK) {
   const batScores = sortedScores(players, batting);
   const bowlScores = sortedScores(players, bowling);
   return new Map(players.map(player => {
     const [low, high] = bandFor(player);
-    const rating = Math.round(low + (high - low) * placement(player, batScores, bowlScores));
+    const fromCareer = Math.round(low + (high - low) * placement(player, batScores, bowlScores));
+    const rating = fromCareer + (outlook[player.id]?.change ?? 0);
     return [player.id, Math.max(1, Math.min(99, rating))];
   }));
 }
+
+// A player's next-IPL outlook ({ change, note }), or null when their career numbers tell the story
+export const outlookOf = (playerId) => PLAYER_OUTLOOK[playerId] ?? null;
 
 export const ratingTier = (rating) =>
   rating >= 90 ? 'elite' : rating >= 80 ? 'star' : rating >= 65 ? 'solid' : rating >= 50 ? 'squad' : 'prospect';

@@ -21,7 +21,7 @@ import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { buttonClasses } from '../components/ui/styles';
 import SignInOptions from '../components/SignInOptions';
 import OverseasLimitPicker from '../components/OverseasLimitPicker';
-import AuctionActivityFeed from '../components/AuctionActivityFeed';
+import JustSoldStrip from '../components/JustSoldStrip';
 import Footer from '../components/Footer';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
@@ -53,7 +53,7 @@ const LoadError = ({ message, onRetry }) => (
 
 // ─── Page ───
 
-const LandingPage = () => {
+const Home = () => {
   useDocumentTitle();
   const { user } = useAuth();
   return user ? <ControlRoom /> : <SignedOut />;
@@ -74,7 +74,7 @@ const SignedOut = () => {
         </Link>
       }
     >
-      <AuctionActivityFeed className="mt-4" />
+      <JustSoldStrip className="mt-4" />
 
       <section className="grid items-center gap-10 pb-12 pt-8 sm:pt-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:gap-14 lg:pb-16">
         <div className="min-w-0">
@@ -356,7 +356,7 @@ const ControlRoom = () => {
 
   return (
     <PageShell>
-      <AuctionActivityFeed className="mt-4" />
+      <JustSoldStrip className="mt-4" />
 
       <div className="flex flex-wrap items-end justify-between gap-3 pt-6 sm:pt-8">
         <div className="min-w-0">
@@ -996,4 +996,4 @@ const SquadDetail = ({ id, session }) => {
   );
 };
 
-export default LandingPage;
+export default Home;

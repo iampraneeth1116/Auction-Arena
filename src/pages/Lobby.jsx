@@ -19,12 +19,12 @@ import Button from '../components/ui/Button';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import Toggle from '../components/ui/Toggle';
 import OverseasLimitPicker from '../components/OverseasLimitPicker';
-import PageLoader from '../components/PageLoader';
+import PreShow from '../components/PreShow';
 import Stat from '../components/ui/Stat';
 import Tag from '../components/ui/Tag';
 import TeamCrest from '../components/ui/TeamCrest';
 import { buttonClasses } from '../components/ui/styles';
-import TextChat from '../components/TextChat';
+import RoomChat from '../components/RoomChat';
 import SignInOptions from '../components/SignInOptions';
 
 const TEAM_COUNT = TEAMS.length;
@@ -704,7 +704,7 @@ const Lobby = () => {
     );
   }
 
-  if (!room || roomLoading || room.status !== 'waiting') return <PageLoader />;
+  if (!room || roomLoading || room.status !== 'waiting') return <PreShow />;
 
   // ─── Lobby ───
 
@@ -818,7 +818,7 @@ const Lobby = () => {
           )}
           <MembersPanel players={players} uid={uid} isHost={isHost} spectatorCount={room.spectatorCount ?? 0} onKick={setKickTarget} />
           <Panel label="Room chat" actions={<MessageSquare size={14} className="text-haze" aria-hidden />} className="order-4" bodyClassName="h-[420px]">
-            <TextChat roomId={roomCode} canChat={Boolean(me)} />
+            <RoomChat roomId={roomCode} canChat={Boolean(me)} />
           </Panel>
         </div>
       </div>

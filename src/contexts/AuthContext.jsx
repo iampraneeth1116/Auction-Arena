@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { api } from '../lib/api';
 import { resetSocket } from '../lib/socket';
 import { AuthContext } from '../hooks/useAuth';
-import PageLoader from '../components/PageLoader';
+import PreShow from '../components/PreShow';
 
 const GOOGLE_ENABLED = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
 
@@ -138,7 +138,7 @@ export const AuthProvider = ({ children }) => {
       <AnimatePresence mode="wait">
         {loading || introPlaying ? (
           <motion.div key="loader" exit={{ opacity: 0 }} transition={{ duration: 0.3, ease: 'easeIn' }} className="fixed inset-0 z-[9999]">
-            <PageLoader intro={introPlaying} onEnter={finishIntro} />
+            <PreShow intro={introPlaying} onEnter={finishIntro} />
           </motion.div>
         ) : (
           <motion.div key="app" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3, ease: 'easeOut' }}>

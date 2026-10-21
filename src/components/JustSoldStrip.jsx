@@ -10,7 +10,7 @@ const REFRESH_MS = 20000;
 
 // A broadcast ticker of real signings from every room, plus how many auctions are live.
 // Renders nothing until there is at least one signing to show.
-export default function AuctionActivityFeed({ className }) {
+export default function JustSoldStrip({ className }) {
   const [feed, setFeed] = useState(null);
 
   useEffect(() => {

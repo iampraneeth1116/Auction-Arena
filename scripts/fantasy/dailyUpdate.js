@@ -1,5 +1,5 @@
-import { prisma } from '../server/db.js';
-import { ApiLimitError, collectMatchPlayers, fetchFromCricApi, saveMatch } from './lib/fantasyScoring.js';
+import { prisma } from '../../server/db.js';
+import { ApiLimitError, collectMatchPlayers, fetchFromCricApi, saveMatch } from '../lib/fantasyScoring.js';
 
 // Daily job: scores every IPL 2026 match that finished since the last run.
 // Run with `npm run fantasy:update` (needs DATABASE_URL and CRICKET_API_KEY).
