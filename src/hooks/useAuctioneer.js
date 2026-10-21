@@ -34,18 +34,32 @@ function pickVoices() {
 const shortVoiceName = (voice) =>
   voice.name.replace(/Microsoft|Google|Desktop|Online|\(Natural\)/g, '').replace(/\s+/g, ' ').trim() + ` (${voice.lang})`;
 
-// Kept short so the voice can keep up when bids come quickly
-const BID_LINES = [
-  (price, team) => `${price}, ${team}.`,
-  (price, team) => `${team} go to ${price}.`,
-  (price, team) => `${price} with ${team}.`,
-  (price, team) => `${team}, ${price}.`,
-];
+// A bid is said the way an auctioneer calls it, "16 crore 25, Bengaluru": price first and
+// short, because people can raise every second and a long line falls behind the room
+export function bidPriceForSpeech(crores) {
+  const lakhsTotal = Math.round((crores || 0) * 100);
+  const crore = Math.floor(lakhsTotal / 100);
+  const lakh = lakhsTotal % 100;
+  if (!crore) return `${lakh} lakh`;
+  return lakh ? `${crore} crore ${lakh}` : `${crore} crore`;
+}
 
-// Says lines one at a time and never cuts one off mid-word (cancelling the line being
-// said for every raise left only fragments when bids came fast). A newer bid replaces a
-// bid still waiting its turn, so the voice jumps to the latest price instead of falling
-// behind; the next lot, sold and unsold are always said.
+const SPOKEN_TEAMS = {
+  MI: 'Mumbai', CSK: 'Chennai', RCB: 'Bengaluru', KKR: 'Kolkata', DC: 'Delhi',
+  PBKS: 'Punjab', RR: 'Rajasthan', SRH: 'Hyderabad', GT: 'Gujarat', LSG: 'Lucknow',
+};
+
+// Bids are said a little faster than other lines
+const BID_PACE = 1.15;
+
+// Where the word at the end of `part` starts in `text`: once the voice reaches that
+// word, the part that matters (the price, the player's name) has been heard
+const lastWordOf = (text, part) => text.lastIndexOf(' ', text.indexOf(part) + part.length - 1) + 1;
+
+// Says lines one at a time. A newer bid replaces a bid still waiting its turn, so the voice
+// jumps to the latest price, and the next lot, sold and unsold are always said. A line may
+// be cut short by a newer one, but only after its key part has been said (cancelling every
+// line outright left only fragments; never cancelling let the voice fall seconds behind).
 function createSpeechQueue() {
   let current = null;
   let waiting = [];
@@ -55,23 +69,45 @@ function createSpeechQueue() {
     current = null;
     const line = waiting.shift();
     if (!line) return;
+    const rate = voiceOptions.rate * (line.bid ? BID_PACE : 1);
     const utterance = new SpeechSynthesisUtterance(line.text);
     if (voiceOptions.voice) utterance.voice = voiceOptions.voice;
-    utterance.rate = voiceOptions.rate;
+    utterance.rate = rate;
     utterance.pitch = voiceOptions.pitch;
+    const state = { utterance, cuttable: false };
+    let cutTimer;
+    const allowCut = () => {
+      state.cuttable = true;
+      if (waiting.length) window.speechSynthesis.cancel();
+    };
+    if (line.keyEndsAt != null) {
+      // Most voices report each word as they reach it: the line can be cut a moment after
+      // the key part's last word starts. A voice that reports nothing gets a timed guess.
+      cutTimer = setTimeout(allowCut, 1800 / rate);
+      utterance.onboundary = (event) => {
+        clearTimeout(cutTimer);
+        if (event.charIndex < line.keyEndsAt) {
+          cutTimer = setTimeout(allowCut, 2500 / rate);
+          return;
+        }
+        utterance.onboundary = null;
+        cutTimer = setTimeout(allowCut, 700 / rate);
+      };
+    }
     const finish = () => {
       clearTimeout(watchdog);
-      if (current === utterance) playNext();
+      clearTimeout(cutTimer);
+      if (current === state) playNext();
     };
     // If the browser never reports the end, move on rather than going quiet for good
     const watchdog = setTimeout(() => {
-      if (current !== utterance) return;
+      if (current !== state) return;
       window.speechSynthesis.cancel();
       finish();
     }, 5000 + line.text.length * 120);
     utterance.onend = finish;
     utterance.onerror = finish;
-    current = utterance;
+    current = state;
     window.speechSynthesis.speak(utterance);
   }
 
@@ -79,10 +115,13 @@ function createSpeechQueue() {
     setVoiceOptions(next) {
       voiceOptions = next;
     },
-    say(text, { bid = false } = {}) {
+    // keyEndsAt: where the last word of the part that must be heard starts; leave it out
+    // for a line that's never cut short
+    say(text, { bid = false, keyEndsAt = null } = {}) {
       if (bid) waiting = waiting.filter(line => !line.bid);
-      waiting.push({ text, bid });
+      waiting.push({ text, bid, keyEndsAt });
       if (!current) playNext();
+      else if (current.cuttable) window.speechSynthesis.cancel();
     },
     stop() {
       waiting = [];
@@ -137,11 +176,14 @@ export function useAuctioneer({ live, roomStatus }) {
     if (live.status === 'bidding') {
       if (last.playerId !== live.playerId) {
         spoken.current = { playerId: live.playerId, bid: 0, status: 'bidding' };
-        speak(`Next up, ${player.name}. ${ROLE_META[player.role]?.label ?? player.role}. Base price ${priceForSpeech(player.basePrice)}.`);
+        // An early bid may cut the role and base price, never the name
+        const text = `Next up, ${player.name}. ${ROLE_META[player.role]?.label ?? player.role}. Base price ${priceForSpeech(player.basePrice)}.`;
+        speak(text, { keyEndsAt: lastWordOf(text, player.name) });
       } else if (live.currentBid > last.bid) {
         spoken.current = { ...last, bid: live.currentBid, status: 'bidding' };
-        const line = BID_LINES[Math.floor(Math.random() * BID_LINES.length)];
-        speak(line(priceForSpeech(live.currentBid), teamName), { bid: true });
+        const price = bidPriceForSpeech(live.currentBid);
+        const team = SPOKEN_TEAMS[live.highBidderTeamId] ?? teamName;
+        speak(`${price}, ${team}.`, { bid: true, keyEndsAt: lastWordOf(`${price}, ${team}.`, price) });
       }
     } else if (live.status !== last.status) {
       spoken.current = { ...last, playerId: live.playerId, status: live.status };
