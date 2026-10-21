@@ -145,23 +145,24 @@ const TOTALS = [
 ];
 
 async function upload() {
-  const writes = [];
+  const rows = [];
   for (const [name, totalPoints, matches] of TOTALS) {
     const player = findPlayer(normalizeName(name));
     if (!player) {
       console.warn(`[upload] No player called ${name} in players.js`);
       continue;
     }
-    writes.push(prisma.playerStat.upsert({
-      where: { playerId: player.id },
-      create: { playerId: player.id, totalPoints, matches },
-      update: { totalPoints, matches },
-    }));
+    rows.push({ playerId: player.id, totalPoints, matches });
   }
 
-  // All or nothing, so a failure never leaves half the table applied
-  await prisma.$transaction(writes);
-  console.log(`[upload] Set totals for ${writes.length} players.`);
+  // All or nothing, so a failure never leaves half the table applied. Two statements rather
+  // than an upsert per player: from a laptop every round trip to a hosted database is slow,
+  // and over a hundred of them outlast Prisma's 5-second transaction limit.
+  await prisma.$transaction([
+    prisma.playerStat.deleteMany({ where: { playerId: { in: rows.map(row => row.playerId) } } }),
+    prisma.playerStat.createMany({ data: rows }),
+  ], { maxWait: 15_000 });
+  console.log(`[upload] Set totals for ${rows.length} players.`);
 }
 
 upload()

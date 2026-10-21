@@ -163,6 +163,8 @@ export function collectMatchPlayers(scorecardData, lineupPlayers = []) {
 
 // Saves one match atomically: per-player points, running totals and the processed
 // marker. The marker is what stops a re-run from counting the same match twice.
+// That's two writes per player, so the transaction gets more than Prisma's default
+// 5 seconds: run from a laptop against a hosted database, each write is a slow round trip.
 export async function saveMatch(prisma, match, matchPlayers) {
   const scored = [];
   const unmapped = [];
@@ -189,7 +191,7 @@ export async function saveMatch(prisma, match, matchPlayers) {
       }),
     ]),
     prisma.processedMatch.create({ data: { matchId: match.id, name: match.name } }),
-  ]);
+  ], { maxWait: 15_000, timeout: 60_000 });
 
   return { matched: scored.length, total: Object.keys(matchPlayers).length, unmapped };
 }
