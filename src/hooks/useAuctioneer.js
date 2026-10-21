@@ -34,12 +34,63 @@ function pickVoices() {
 const shortVoiceName = (voice) =>
   voice.name.replace(/Microsoft|Google|Desktop|Online|\(Natural\)/g, '').replace(/\s+/g, ' ').trim() + ` (${voice.lang})`;
 
+// Kept short so the voice can keep up when bids come quickly
 const BID_LINES = [
   (price, team) => `${price}, ${team}.`,
   (price, team) => `${team} go to ${price}.`,
   (price, team) => `${price} with ${team}.`,
-  (price, team) => `${team}, ${price}. Any advance?`,
+  (price, team) => `${team}, ${price}.`,
 ];
+
+// Says lines one at a time and never cuts one off mid-word (cancelling the line being
+// said for every raise left only fragments when bids came fast). A newer bid replaces a
+// bid still waiting its turn, so the voice jumps to the latest price instead of falling
+// behind; the next lot, sold and unsold are always said.
+function createSpeechQueue() {
+  let current = null;
+  let waiting = [];
+  let voiceOptions = {};
+
+  function playNext() {
+    current = null;
+    const line = waiting.shift();
+    if (!line) return;
+    const utterance = new SpeechSynthesisUtterance(line.text);
+    if (voiceOptions.voice) utterance.voice = voiceOptions.voice;
+    utterance.rate = voiceOptions.rate;
+    utterance.pitch = voiceOptions.pitch;
+    const finish = () => {
+      clearTimeout(watchdog);
+      if (current === utterance) playNext();
+    };
+    // If the browser never reports the end, move on rather than going quiet for good
+    const watchdog = setTimeout(() => {
+      if (current !== utterance) return;
+      window.speechSynthesis.cancel();
+      finish();
+    }, 5000 + line.text.length * 120);
+    utterance.onend = finish;
+    utterance.onerror = finish;
+    current = utterance;
+    window.speechSynthesis.speak(utterance);
+  }
+
+  return {
+    setVoiceOptions(next) {
+      voiceOptions = next;
+    },
+    say(text, { bid = false } = {}) {
+      if (bid) waiting = waiting.filter(line => !line.bid);
+      waiting.push({ text, bid });
+      if (!current) playNext();
+    },
+    stop() {
+      waiting = [];
+      current = null;
+      window.speechSynthesis.cancel();
+    },
+  };
+}
 
 // The voice auctioneer: announces each lot, every raise, and the hammer.
 // Settings live in this browser only.
@@ -50,28 +101,31 @@ export function useAuctioneer({ live, roomStatus }) {
   const [voiceName, setVoiceName] = useLocalSetting('voice.name', '');
   // Some browsers have the voice list ready at once, others announce it later
   const [voices, setVoices] = useState(() => (speechSupported ? pickVoices() : []));
+  const [queue] = useState(() => (speechSupported ? createSpeechQueue() : null));
   const spoken = useRef({ playerId: null, bid: 0, status: null });
 
   useEffect(() => {
-    if (!speechSupported) return;
+    queue?.setVoiceOptions({ voice: voices.find(v => v.name === voiceName) ?? voices[0], rate, pitch });
+  }, [queue, voices, voiceName, rate, pitch]);
+
+  useEffect(() => {
+    if (!queue) return;
     const load = () => setVoices(pickVoices());
     window.speechSynthesis.addEventListener('voiceschanged', load);
     return () => {
       window.speechSynthesis.removeEventListener('voiceschanged', load);
-      window.speechSynthesis.cancel();
+      queue.stop();
     };
-  }, []);
+  }, [queue]);
 
-  const speak = useCallback((text) => {
-    if (!speechSupported || !enabled) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    const voice = voices.find(v => v.name === voiceName) ?? voices[0];
-    if (voice) utterance.voice = voice;
-    utterance.rate = rate;
-    utterance.pitch = pitch;
-    window.speechSynthesis.speak(utterance);
-  }, [enabled, voices, voiceName, rate, pitch]);
+  // Turning the voice off stops it at once, not after the lines already waiting
+  useEffect(() => {
+    if (!enabled) queue?.stop();
+  }, [enabled, queue]);
+
+  const speak = useCallback((text, options) => {
+    if (queue && enabled) queue.say(text, options);
+  }, [queue, enabled]);
 
   useEffect(() => {
     if (roomStatus !== 'active' || !live) return;
@@ -87,7 +141,7 @@ export function useAuctioneer({ live, roomStatus }) {
       } else if (live.currentBid > last.bid) {
         spoken.current = { ...last, bid: live.currentBid, status: 'bidding' };
         const line = BID_LINES[Math.floor(Math.random() * BID_LINES.length)];
-        speak(line(priceForSpeech(live.currentBid), teamName));
+        speak(line(priceForSpeech(live.currentBid), teamName), { bid: true });
       }
     } else if (live.status !== last.status) {
       spoken.current = { ...last, playerId: live.playerId, status: live.status };
@@ -105,6 +159,10 @@ export function useAuctioneer({ live, roomStatus }) {
     voiceName: voiceName || voices[0]?.name || '',
     setVoiceName,
     voices: voices.map(v => ({ name: v.name, label: shortVoiceName(v) })),
-    preview: () => speak('Welcome to Auction Arena. Bidding opens at two crore.'),
+    preview: () => {
+      if (!queue || !enabled) return;
+      queue.stop();
+      queue.say('Welcome to Auction Arena. Bidding opens at two crore.');
+    },
   };
 }
