@@ -132,10 +132,10 @@ const bidLadder = (opening) => {
 
 const SAMPLE_LOTS = (() => {
   const lots = [
-    { playerId: 'p_142', lot: 7, opening: 16.5, bidders: ['RCB', 'MI', 'CSK'] },
-    { playerId: 'p_621', lot: 12, opening: 14.75, bidders: ['MI', 'GT', 'KKR'] },
-    { playerId: 'p_105', lot: 18, opening: 10.5, bidders: ['SRH', 'DC', 'LSG'] },
-    { playerId: 'p_125', lot: 23, opening: 11.25, bidders: ['GT', 'RR', 'PBKS'] },
+    { playerId: 'virat-kohli', lot: 7, opening: 16.5, bidders: ['RCB', 'MI', 'CSK'] },
+    { playerId: 'jasprit-bumrah', lot: 12, opening: 14.75, bidders: ['MI', 'GT', 'KKR'] },
+    { playerId: 'heinrich-klaasen', lot: 18, opening: 10.5, bidders: ['SRH', 'DC', 'LSG'] },
+    { playerId: 'rashid-khan', lot: 23, opening: 11.25, bidders: ['GT', 'RR', 'PBKS'] },
   ]
     .map(lot => ({ ...lot, player: PLAYERS_BY_ID.get(lot.playerId) }))
     .filter(lot => lot.player);
