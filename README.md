@@ -6,6 +6,11 @@
 Claim a franchise, bid against each other on 500+ real players, let bots fill the empty teams, then see who built the best side.</p>
 
 <p align="center">
+  <a href="https://auction-arena-g1ot.onrender.com"><b>▶ Play it live: auction-arena-g1ot.onrender.com</b></a><br>
+  <sub>Free hosting: if nobody has played for a while, the first visit takes 30–60 seconds while the server wakes up.</sub>
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/React-19-20232A?logo=react&logoColor=61DAFB" alt="React 19">
   <img src="https://img.shields.io/badge/Node.js-24_LTS-339933?logo=node.js&logoColor=white" alt="Node.js 24">
   <img src="https://img.shields.io/badge/Socket.IO-4-010101?logo=socket.io&logoColor=white" alt="Socket.IO 4">
