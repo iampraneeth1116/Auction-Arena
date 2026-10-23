@@ -141,7 +141,7 @@ export function useAuctioneer({ live, roomStatus }) {
   // Some browsers have the voice list ready at once, others announce it later
   const [voices, setVoices] = useState(() => (speechSupported ? pickVoices() : []));
   const [queue] = useState(() => (speechSupported ? createSpeechQueue() : null));
-  const spoken = useRef({ playerId: null, bid: 0, status: null });
+  const spoken = useRef({ playerId: null, bid: 0, teamId: '', status: null });
 
   useEffect(() => {
     queue?.setVoiceOptions({ voice: voices.find(v => v.name === voiceName) ?? voices[0], rate, pitch });
@@ -175,12 +175,18 @@ export function useAuctioneer({ live, roomStatus }) {
 
     if (live.status === 'bidding') {
       if (last.playerId !== live.playerId) {
-        spoken.current = { playerId: live.playerId, bid: 0, status: 'bidding' };
+        spoken.current = { playerId: live.playerId, bid: 0, teamId: '', status: 'bidding' };
         // An early bid may cut the role and base price, never the name
         const text = `Next up, ${player.name}. ${ROLE_META[player.role]?.label ?? player.role}. Base price ${priceForSpeech(player.basePrice)}.`;
         speak(text, { keyEndsAt: lastWordOf(text, player.name) });
-      } else if (live.currentBid > last.bid) {
-        spoken.current = { ...last, bid: live.currentBid, status: 'bidding' };
+        return;
+      }
+      // Our own bid is called before the server confirms it, so the server can still name
+      // another team at the same price, or a lower one when ours didn't go through
+      const changed = live.currentBid !== last.bid || live.highBidderTeamId !== last.teamId;
+      spoken.current = { ...last, bid: live.currentBid, teamId: live.highBidderTeamId, status: 'bidding' };
+      // Back at no bid means the host removed the high bidder: nothing to call
+      if (changed && live.currentBid > 0) {
         const price = bidPriceForSpeech(live.currentBid);
         const team = SPOKEN_TEAMS[live.highBidderTeamId] ?? teamName;
         speak(`${price}, ${team}.`, { bid: true, keyEndsAt: lastWordOf(`${price}, ${team}.`, price) });

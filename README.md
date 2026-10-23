@@ -201,3 +201,7 @@ auction-arena/
 ├── tests/                     # End-to-end tests (npm test)
 └── .github/workflows/         # CI, and the daily fantasy update
 ```
+
+## 📄 Licence
+
+Copyright © 2026 Praneeth. All rights reserved. This is proprietary software: no permission is granted to copy, modify, distribute or use it. See [LICENSE](LICENSE).

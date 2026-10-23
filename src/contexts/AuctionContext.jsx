@@ -55,7 +55,8 @@ export const AuctionProvider = ({ children }) => {
       setBidTrail(trail => {
         if (!live) return [];
         const sameLot = trail.length > 0 && trail[0].playerId === live.playerId;
-        const kept = sameLot ? trail : [];
+        // The price only drops on a lot when the host removes the high bidder: their bids leave the trail
+        const kept = sameLot ? trail.filter(entry => entry.amount <= live.currentBid) : [];
         const last = kept[kept.length - 1];
         if (!live.currentBid || (last && last.amount >= live.currentBid)) return kept;
         const entry = {

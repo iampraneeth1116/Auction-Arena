@@ -1104,7 +1104,8 @@ const Fantasy = () => (
         <li>
           <strong className="font-semibold text-snow">Points come from real IPL matches.</strong> Every morning, around
           08:00 IST, a job reads the scorecards of finished matches and adds each player&rsquo;s points. Your total is
-          your picks&rsquo; points across every match scored so far, ranked on the room&rsquo;s own leaderboard.
+          your picks&rsquo; points across every match scored so far. The room&rsquo;s own leaderboard ranks managers by
+          their average: that total divided by the number of players picked, impact player included.
         </li>
       </ul>
       <TeamSheet />

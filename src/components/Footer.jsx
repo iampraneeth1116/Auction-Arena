@@ -62,7 +62,7 @@ const Footer = () => {
 
       <div className="mt-8 flex flex-col gap-2 border-t border-white/6 pt-4 text-xs text-haze sm:flex-row sm:items-center sm:justify-between">
         <p>Built with React, Node.js, Socket.IO and PostgreSQL</p>
-        <p className="font-display uppercase tracking-[0.14em]">© {YEAR} Auction Arena</p>
+        <p className="font-display uppercase tracking-[0.14em]">© {YEAR} Praneeth. All rights reserved.</p>
       </div>
     </footer>
   );

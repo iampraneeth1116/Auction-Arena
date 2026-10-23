@@ -70,8 +70,9 @@ function bowlingPoints({ w, m, r, o, dot, lbw_bowled: lbwBowled }) {
   else if (wickets >= 4) points += 8;
   else if (wickets >= 3) points += 4;
 
-  // Economy counts from 2 overs bowled
-  const overs = parseFloat(o) || 0;
+  // Economy counts from 2 overs bowled. Overs are written overs.balls, so 3.4 is 3 overs and 4 balls.
+  const [whole, balls] = String(o ?? '').split('.');
+  const overs = int(whole) + int(balls) / 6;
   if (overs >= 2) {
     const economy = int(r) / overs;
     if (economy < 5) points += 6;

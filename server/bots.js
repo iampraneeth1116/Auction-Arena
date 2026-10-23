@@ -205,8 +205,10 @@ export function pickBotXI(squadPlayers) {
 
   const keeper = ranked.find(p => p.role === 'Wicket-Keeper' && !xi.includes(p));
   if (keeper && !xi.some(p => p.role === 'Wicket-Keeper') && xi.length === XI_SIZE) {
-    // Swap the weakest Indian player out (keeps the overseas count legal)
-    const out = [...xi].reverse().find(p => !isOverseas(p) || isOverseas(keeper));
+    // Swap the weakest Indian player out for an Indian keeper. An overseas keeper replaces
+    // the weakest player who keeps the XI within the overseas limit.
+    const roomForOverseas = xi.filter(isOverseas).length < MAX_OVERSEAS_IN_XI;
+    const out = [...xi].reverse().find(p => (isOverseas(keeper) ? isOverseas(p) || roomForOverseas : !isOverseas(p)));
     if (out) xi.splice(xi.indexOf(out), 1, keeper);
   }
 

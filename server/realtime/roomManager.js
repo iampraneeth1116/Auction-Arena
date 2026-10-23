@@ -299,8 +299,13 @@ async function startPlayer(rt, index, durationMs) {
 async function resolvePlayer(rt) {
   const { live, room } = rt;
   if (room.status !== 'active' || live?.status !== 'bidding') return;
-  // A bid that landed after this timer was armed moved the deadline
-  if (live.timerEndsAt > Date.now()) return scheduleNext(rt);
+  // A bid that landed after this timer was armed moved the deadline. Re-arming the
+  // clock clears the bots' timer too, so give them their chance at that bid again.
+  if (live.timerEndsAt > Date.now()) {
+    scheduleNext(rt);
+    scheduleBots(rt);
+    return;
+  }
   clearBotTimer(rt);
 
   const player = PLAYERS_BY_ID.get(live.playerId);
@@ -680,6 +685,7 @@ export function kickMember(rt, hostId, targetUserId) {
     const nextLive = rt.live?.highBidderId === targetUserId && rt.live.status !== 'sold'
       ? { ...rt.live, currentBid: 0, highBidderId: '', highBidderName: 'No Bids', highBidderTeamId: '' }
       : rt.live;
+    const bidReset = nextLive !== rt.live;
     await prisma.$transaction([
       prisma.roomMember.delete({ where: { id: target.id } }),
       prisma.room.update({
@@ -699,6 +705,8 @@ export function kickMember(rt, hostId, targetUserId) {
     io?.in(userChannel(targetUserId)).socketsLeave(roomChannel(rt.room.id));
     await addMessage(rt, { text: `${target.displayName} has been removed from the room.` });
     broadcast(rt);
+    // The player is back at the opening bid, which bots priced out of the old bid may now want
+    if (bidReset) scheduleBots(rt);
   });
 }
 
@@ -862,7 +870,8 @@ export async function sendChat(rt, userId, { text, type }) {
       throw new HttpError(400, 'Invalid GIF');
     }
     // Only Giphy media, so chat can't be used to load arbitrary tracking images
-    if (url.protocol !== 'https:' || !url.hostname.endsWith('giphy.com') || content.length > 500) {
+    const fromGiphy = url.hostname === 'giphy.com' || url.hostname.endsWith('.giphy.com');
+    if (url.protocol !== 'https:' || !fromGiphy || content.length > 500) {
       throw new HttpError(400, 'Invalid GIF');
     }
   } else {

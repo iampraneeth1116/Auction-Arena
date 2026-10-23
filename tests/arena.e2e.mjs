@@ -47,6 +47,16 @@ try {
   check('bot captain and vice-captain are different XI players', botXI.captain !== botXI.viceCaptain && botXI.players.includes(botXI.captain) && botXI.players.includes(botXI.viceCaptain));
   check('bot impact player comes from the bench', Boolean(botXI.impactPlayer) && !botXI.players.includes(botXI.impactPlayer));
   check('no fantasy XI for a bot with fewer than 5 players', pickBotXI(botSquad.slice(0, 4)) === null);
+  {
+    // 4 overseas stars and 7 Indians fill the XI; the only keeper is overseas and rated below them all
+    const rate = (p) => RATINGS.get(p.id) ?? 0;
+    const keeper = IPL_PLAYERS.filter(p => p.role === 'Wicket-Keeper' && isOverseas(p)).sort((a, b) => rate(a) - rate(b))[0];
+    const stars = IPL_PLAYERS.filter(p => p.role !== 'Wicket-Keeper' && isOverseas(p)).sort((a, b) => rate(b) - rate(a)).slice(0, 4);
+    const indians = IPL_PLAYERS.filter(p => p.role !== 'Wicket-Keeper' && !isOverseas(p) && rate(p) > rate(keeper)).slice(0, 7);
+    const xi = pickBotXI([...stars, ...indians, keeper]).players.map(id => PLAYERS.get(id));
+    check('an overseas keeper joins a bot XI without going over 4 overseas',
+      xi.length === 11 && xi.includes(keeper) && xi.filter(isOverseas).length === 4, JSON.stringify(xi.map(p => p.id)));
+  }
 
   // ─── Playing profiles and best-XI judging (pure functions) ───
   const badProfiles = Object.entries(PLAYER_PROFILES).filter(([id, text]) => {

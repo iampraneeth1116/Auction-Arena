@@ -314,14 +314,14 @@ const AuctionRoom = () => {
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-grid">
       {/* Top bar */}
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-white/6 bg-ink-950/90 px-2 backdrop-blur sm:px-4">
+      <header className="flex h-14 shrink-0 items-center gap-1.5 border-b border-white/6 bg-ink-950/90 px-2 backdrop-blur sm:px-4">
         <Link to="/" aria-label="Auction Arena home" className="flex items-center">
           <span className="h-5 w-2 -skew-x-12 bg-signal sm:hidden" aria-hidden />
           <span className="hidden sm:inline-flex"><Logo size="sm" /></span>
         </Link>
         <span className="mx-1 hidden h-6 w-px bg-white/10 sm:block" aria-hidden />
         {spectating ? <Tag tone="signal" icon={Eye}>Watching</Tag> : <LiveTag />}
-        <button onClick={copyCode} className="flex items-center gap-1.5 rounded-md px-2 py-1 font-display text-base font-bold tracking-[0.2em] hover:bg-white/5 cursor-pointer" aria-label="Copy room code">
+        <button onClick={copyCode} className="flex items-center gap-1.5 rounded-md px-1.5 py-1 font-display text-base font-bold tracking-[0.12em] hover:bg-white/5 cursor-pointer sm:px-2 sm:tracking-[0.2em]" aria-label="Copy room code">
           {id} {copied ? <Check size={14} className="text-volt" /> : <Copy size={14} className="text-haze" />}
         </button>
         <span className="hidden font-display text-sm uppercase tracking-wider text-haze md:inline">
@@ -336,13 +336,15 @@ const AuctionRoom = () => {
           {isHost && (
             <>
               {live?.status === 'paused' ? (
-                <Button size="sm" variant="volt" icon={Play} onClick={() => runHostAction(resumeAuction)}>Resume</Button>
+                <Button size="sm" variant="volt" icon={Play} onClick={() => runHostAction(resumeAuction)} aria-label="Resume auction" className="max-sm:px-2">
+                  <span className="hidden sm:inline">Resume</span>
+                </Button>
               ) : (
-                <Button size="sm" variant="outline" icon={Pause} onClick={() => runHostAction(pauseAuction)} disabled={live?.status !== 'bidding'}>
+                <Button size="sm" variant="outline" icon={Pause} onClick={() => runHostAction(pauseAuction)} disabled={live?.status !== 'bidding'} aria-label="Pause auction" className="max-sm:px-2">
                   <span className="hidden sm:inline">Pause</span>
                 </Button>
               )}
-              <Button size="sm" variant="danger" icon={Square} onClick={() => setOverlay('end')} aria-label="End auction">
+              <Button size="sm" variant="danger" icon={Square} onClick={() => setOverlay('end')} aria-label="End auction" className="max-sm:px-2">
                 <span className="hidden sm:inline">End</span>
               </Button>
             </>
@@ -352,7 +354,8 @@ const AuctionRoom = () => {
           <IconButton icon={Settings} label="Settings" onClick={() => setOverlay('settings')} />
           {team && (
             <>
-              <TeamCrest teamId={team.teamId} size="sm" className="ml-1" />
+              {/* On phones the host's Pause and End buttons need the room, so their crest steps aside */}
+              <TeamCrest teamId={team.teamId} size="sm" className={cn('ml-1', isHost && 'max-sm:hidden')} />
               <span className="hidden font-display text-sm font-semibold uppercase tracking-wide xl:inline">{team.teamName}</span>
             </>
           )}

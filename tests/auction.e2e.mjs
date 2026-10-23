@@ -88,6 +88,7 @@ try {
   check('a 151-character message is refused', /1–150/.test((await bob.emit('chat:send', { roomId, text: 'x'.repeat(151), type: 'text' })).error || ''));
   await new Promise(r => setTimeout(r, 600));
   check('an image from outside Giphy is refused', /Invalid GIF/.test((await bob.emit('chat:send', { roomId, text: 'https://evil.example/a.gif', type: 'gif' })).error || ''));
+  check('a look-alike domain ending in giphy.com is refused', /Invalid GIF/.test((await bob.emit('chat:send', { roomId, text: 'https://evilgiphy.com/a.gif', type: 'gif' })).error || ''));
   check('a Giphy GIF is accepted', (await alice.emit('chat:send', { roomId, text: 'https://media.giphy.com/media/abc/giphy.gif', type: 'gif' })).ok);
   const watcher = await signedIn('Watcher');
   await watcher.connect();
@@ -290,6 +291,7 @@ try {
   check('an innings scores as the rules say', calculatePoints({ batting: { r: 52, b: 30, fours: 4, sixes: 2, dismissal: 'caught' }, announced: true }, 'Batsman').points === 98);
   // 4-0-24-3 with 10 dots and an LBW: 10 + 90 + 8 + 4 (3 wickets) + 2 (economy 6) + 4 (in the XI)
   check('a spell scores as the rules say', calculatePoints({ bowling: { w: 3, m: 0, r: 24, o: 4, dot: 10, lbw_bowled: 1 }, announced: true }, 'Bowler').points === 118);
+  check('economy counts 3.4 overs as 3 overs and 4 balls', calculatePoints({ bowling: { w: 0, m: 0, r: 18, o: 3.4, dot: 0 } }, 'Bowler').points === 6);
   check('a bowler is not docked for a duck', calculatePoints({ batting: { r: 0, b: 2, dismissal: 'bowled' } }, 'Bowler').points === 0);
   check('CricAPI spellings map to our players', findPlayer('philipsalt')?.name === 'Phil Salt' && findPlayer('mohammedsiraj')?.name === 'Mohammad Siraj' && findPlayer('nobodyatall') === null);
   const scorecard = { scorecard: [{ batting: [{ batsman: { name: 'Virat Kohli' }, r: 52, b: 30, fours: 4, sixes: 2, dismissal: 'caught' }], bowling: [{ bowler: { name: 'Jasprit Bumrah' }, w: 3, m: 0, r: 24, o: 4, dot: 10, lbw_bowled: 1 }] }] };
