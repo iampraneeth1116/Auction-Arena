@@ -92,6 +92,7 @@ model RoomMember {
   budgetRemaining Int
   isBot           Boolean   @default(false)
   hiddenAt        DateTime? // removed from this user's history; the room itself is untouched
+  battingOrder    String[]  @default([]) // the manager's own XI in batting order, set after the auction; empty = the suggested XI
   joinedAt        DateTime  @default(now())
 
   purchases Purchase[]

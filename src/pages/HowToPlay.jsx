@@ -1152,6 +1152,10 @@ const FAQS = [
     a: 'No. When the host removes someone, that account can’t rejoin or watch that room again. Their squad is taken out of the room, and if they held the top bid on the live lot, it goes back to no bids. You can still create or join other rooms.',
   },
   {
+    q: 'Can I pick my own XI and batting order?',
+    a: 'Yes, once the auction is over. On the results page, open Squads and tap Edit XI on your squad. It starts from your best XI in a suggested order (openers, then the top and middle order, finishers and the tail). Drag players or use the arrows to change the order, and swap players in from the bench within the XI’s overseas limit. Everyone in the room sees your order on your squad card and your squad poster. It’s your call, so it doesn’t change your Arena Strength or the standings: those always judge your best XI.',
+  },
+  {
     q: 'Can I switch franchise?',
     a: 'Yes, until you buy your first player. Pick any open franchise in the room. Before the auction starts you can also take a bot’s franchise, and the bot leaves. A franchise held by another person can’t be taken, and after your first signing you’re locked in.',
   },

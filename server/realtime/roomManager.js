@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { prisma } from '../db.js';
 import { IPL_PLAYERS } from '../../src/data/players.js';
 import { HttpError } from '../validation.js';
+import { lineupProblem } from '../../src/lib/lineup.js';
 import { botHesitates, botName, botOffer, botThinkMs, botUserId, pickBotXI, readMarket, rollMood } from '../bots.js';
 import {
   AUCTION_MODES,
@@ -171,6 +172,7 @@ export function getSnapshot(rt) {
       teamName: teamName(m.teamId),
       budgetRemaining: toCrores(m.budgetRemaining),
       squad: squadOf(rt, m).map(p => ({ id: p.playerId, bid: toCrores(p.price) })),
+      battingOrder: m.battingOrder ?? [],
     })),
     currentAuction: rt.live ? { ...rt.live, currentBid: toCrores(rt.live.currentBid) } : null,
   };
@@ -846,6 +848,26 @@ export function endAuction(rt, userId) {
     requireHost(rt, userId);
     if (rt.room.status === 'completed') return;
     await completeRoom(rt, 'Auction ended by the host');
+  });
+}
+
+// A manager's own playing XI in batting order, once the auction is over. An empty
+// list goes back to the suggested XI. It's for show: Arena Strength doesn't use it.
+export function saveBattingOrder(rt, userId, playerIds) {
+  return exclusive(rt, async () => {
+    const member = requireMember(rt, userId);
+    if (!member.teamId) throw new HttpError(400, 'Only franchise managers have a batting order');
+    if (rt.room.status !== 'completed') throw new HttpError(409, 'You can set your batting order once the auction is over');
+    if (!Array.isArray(playerIds)) throw new HttpError(400, 'Invalid batting order');
+    if (playerIds.length > 0) {
+      const squad = squadOf(rt, member).map(p => PLAYERS_BY_ID.get(p.playerId)).filter(Boolean);
+      const problem = lineupProblem(playerIds, squad, rt.room.squadLimit, rt.room.overseasLimit);
+      if (problem) throw new HttpError(400, problem);
+    }
+    await prisma.roomMember.update({ where: { id: member.id }, data: { battingOrder: playerIds } });
+    member.battingOrder = playerIds;
+    broadcast(rt);
+    return { battingOrder: playerIds };
   });
 }
 

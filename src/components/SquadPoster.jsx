@@ -49,12 +49,13 @@ function gridLayout(count) {
 }
 
 const TIER = {
-  roomy: { gap: 'gap-5', name: 'text-[38px]', meta: 'text-[20px]', chip: 'text-[18px] px-2.5 py-0.5', badge: 'lg', price: 'text-[36px]' },
-  regular: { gap: 'gap-4', name: 'text-[28px]', meta: 'text-[18px]', chip: 'text-[16px] px-2 py-0.5', badge: 'md', price: 'text-[22px]' },
-  compact: { gap: 'gap-3', name: 'text-[20px]', meta: 'text-[15px]', chip: 'text-[13px] px-1.5', badge: 'md', price: 'text-[17px]' },
+  roomy: { gap: 'gap-5', name: 'text-[38px]', meta: 'text-[20px]', chip: 'text-[18px] px-2.5 py-0.5', badge: 'lg', price: 'text-[36px]', slot: 'min-w-10 px-2 py-1.5 text-[30px]' },
+  regular: { gap: 'gap-4', name: 'text-[28px]', meta: 'text-[18px]', chip: 'text-[16px] px-2 py-0.5', badge: 'md', price: 'text-[22px]', slot: 'min-w-8 px-1.5 py-1 text-[24px]' },
+  compact: { gap: 'gap-3', name: 'text-[20px]', meta: 'text-[15px]', chip: 'text-[13px] px-1.5', badge: 'md', price: 'text-[17px]', slot: 'min-w-7 px-1 py-1 text-[19px]' },
 };
 
-const PlayerCard = ({ player, team, tier }) => {
+// slot: batting position for XI players; bench players have none
+const PlayerCard = ({ player, team, tier, slot }) => {
   const t = TIER[tier];
   const overseas = isOverseas(player);
   const price = formatPrice(player.bid);
@@ -62,15 +63,22 @@ const PlayerCard = ({ player, team, tier }) => {
     <div
       className={cn('relative flex h-full min-w-0 items-center overflow-hidden rounded-md border border-white/10 bg-ink-900/85 pr-4', t.gap)}
     >
-      <span className="w-1.5 self-stretch" style={{ background: team?.colors.primary }} aria-hidden />
-      <PosterImage
-        src={player.image}
-        alt={player.name}
-        fallback={initials(player.name)}
-        className="rounded-sm bg-ink-700 text-[18px]"
-        imgClassName="object-cover object-top"
-        style={{ height: 'calc(100% - 14px)', aspectRatio: '1 / 1' }}
-      />
+      <span className="w-1.5 self-stretch" style={{ background: slot ? team?.colors.primary : 'rgb(255 255 255 / 0.15)' }} aria-hidden />
+      <span className="relative shrink-0" style={{ height: 'calc(100% - 14px)', aspectRatio: '1 / 1' }}>
+        <PosterImage
+          src={player.image}
+          alt={player.name}
+          fallback={initials(player.name)}
+          className="size-full rounded-sm bg-ink-700 text-[18px]"
+          imgClassName="object-cover object-top"
+        />
+        {/* Batting position, on the photo so the card keeps its width */}
+        {slot && (
+          <span className={cn('absolute bottom-0 left-0 rounded-tr-sm rounded-bl-sm bg-ink-950/90 text-center font-display font-bold leading-none tabular text-snow', t.slot)}>
+            {slot}
+          </span>
+        )}
+      </span>
       <div className="min-w-0 flex-1">
         <p className={cn('truncate font-display font-bold uppercase leading-none tracking-wide text-snow', t.name)}>
           {tier === 'compact' ? shortName(player.name) : player.name}
@@ -107,18 +115,21 @@ const splitPrice = (crores) => (crores > 0 && crores < 1
   ? { value: `₹${Math.round(crores * 100)}`, unit: 'L' }
   : { value: `₹${formatCrores(crores)}`, unit: 'Cr' });
 
-// Props: team (a roomTeams entry), managerName, squadLimit, overseasLimit, mode (auctionType), roomId
-const SquadPoster = ({ team, managerName, squadLimit = 25, overseasLimit, mode, roomId }) => {
+// Props: team (a roomTeams entry), lineup ({ xi, bench } from lineupFor: the XI in batting order),
+// managerName, squadLimit, overseasLimit, mode (auctionType), roomId
+const SquadPoster = ({ team, lineup, managerName, squadLimit = 25, overseasLimit, mode, roomId }) => {
   const franchise = TEAMS_BY_ID.get(team.teamId);
   const primary = franchise?.colors.primary ?? '#22d3ee';
   const secondary = franchise?.colors.secondary ?? '#a3e635';
   const name = franchise?.name ?? team.teamName ?? team.teamId;
 
   const roleOrder = (role) => (ROLES.includes(role) ? ROLES.indexOf(role) : ROLES.length);
-  const players = (team.squad || [])
-    .map(withPlayer)
-    .filter(Boolean)
-    .sort((a, b) => roleOrder(a.role) - roleOrder(b.role) || b.bid - a.bid);
+  const byRole = (a, b) => roleOrder(a.role) - roleOrder(b.role) || b.bid - a.bid;
+  // The XI in batting order, then the bench by role
+  const players = lineup
+    ? [...lineup.xi, ...[...lineup.bench].sort(byRole)]
+    : (team.squad || []).map(withPlayer).filter(Boolean).sort(byRole);
+  const xiCount = lineup?.xi.length ?? 0;
   const spent = players.reduce((sum, p) => sum + p.bid, 0);
   const overseas = players.filter(isOverseas).length;
   const { score } = teamStrength(team.squad || [], squadLimit, overseasLimit);
@@ -202,8 +213,8 @@ const SquadPoster = ({ team, managerName, squadLimit = 25, overseasLimit, mode, 
               gridTemplateRows: `repeat(${rows}, minmax(0, ${cap}px))`,
             }}
           >
-            {players.map(player => (
-              <PlayerCard key={player.id} player={player} team={franchise} tier={tier} />
+            {players.map((player, index) => (
+              <PlayerCard key={player.id} player={player} team={franchise} tier={tier} slot={index < xiCount ? index + 1 : undefined} />
             ))}
           </div>
         )}
@@ -224,7 +235,7 @@ const SquadPoster = ({ team, managerName, squadLimit = 25, overseasLimit, mode, 
           </span>
         </div>
         <span className="shrink-0 font-display text-[20px] font-semibold uppercase tracking-wider text-haze">
-          Chips show Arena Rating 1–99
+          {xiCount ? 'Numbers: batting order · chips: Arena Rating' : 'Chips show Arena Rating 1–99'}
         </span>
       </div>
     </div>

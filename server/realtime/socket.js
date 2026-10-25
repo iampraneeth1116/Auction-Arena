@@ -81,6 +81,7 @@ export function createSocketServer(httpServer) {
     handle('auction:end', async ({ roomId }) => rooms.endAuction(await loadRoom(roomId), user.id));
     handle('bid:place', async ({ roomId, amount }) => rooms.placeBid(await loadRoom(roomId), user.id, amount));
     handle('chat:send', async ({ roomId, text, type }) => rooms.sendChat(await loadRoom(roomId), user.id, { text, type }));
+    handle('lineup:save', async ({ roomId, playerIds }) => rooms.saveBattingOrder(await loadRoom(roomId), user.id, playerIds));
 
     socket.on('disconnect', () => {
       for (const roomId of socket.data.rooms) {

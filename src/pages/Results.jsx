@@ -3,15 +3,17 @@ import { flushSync } from 'react-dom';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-  Bot, Crown, Gavel, Gem, House, ListOrdered, LogIn, Plane, SearchX, Share2, Sparkles, TriangleAlert, Trophy, Users, Zap,
+  Bot, Crown, Gavel, Gem, House, ListOrdered, LogIn, Pencil, Plane, SearchX, Share2, Sparkles, TriangleAlert, Trophy, Users, Zap,
 } from 'lucide-react';
 import { useAuction } from '../hooks/useAuction';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { useLocalSetting } from '../hooks/useLocalSetting';
 import SquadPoster from '../components/SquadPoster';
 import PowerRankings from '../components/PowerRankings';
 import FantasyDashboard from '../components/fantasy/FantasyDashboard';
+import LineupEditor from '../components/LineupEditor';
 import PageShell from '../components/ui/PageShell';
 import Panel from '../components/ui/Panel';
 import Tag, { LiveTag } from '../components/ui/Tag';
@@ -26,6 +28,7 @@ import EmptyState from '../components/ui/EmptyState';
 import { buttonClasses } from '../components/ui/styles';
 import { cn } from '../lib/cn';
 import { TEAMS_BY_ID, teamStrength, withPlayer } from '../lib/catalog';
+import { lineupFor } from '../lib/lineup';
 import { MODE_META, ROLES, ROLE_META, formatPrice, isOverseas, overseasUsage } from '../lib/format';
 import { shareElementAsImage } from '../lib/shareImage';
 
@@ -48,13 +51,16 @@ function buildResults(auction, roomTeams, userId) {
   const teams = roomTeams.map(rt => {
     const players = (rt.squad || []).map(withPlayer).filter(Boolean).map(p => ({ ...p, teamId: rt.teamId }));
     const manager = managers.get(rt.userId);
+    const strength = teamStrength(rt.squad || [], squadLimit, auction.overseasLimit);
     return {
       ...rt,
       name: franchiseName(rt.teamId, rt.teamName),
       players,
       spent: players.reduce((sum, p) => sum + p.bid, 0),
       overseas: players.filter(isOverseas).length,
-      strength: teamStrength(rt.squad || [], squadLimit, auction.overseasLimit),
+      strength,
+      // The manager's XI in batting order, or the best XI in a suggested order
+      lineup: lineupFor(players, strength.bestXI, rt.battingOrder),
       isBot: Boolean(manager?.isBot),
       managerName: manager?.name ?? 'Unknown manager',
       isYou: rt.userId === userId,
@@ -271,10 +277,37 @@ const StandingsTab = ({ results }) => {
 
 // ─── Squads ───
 
-const SquadCard = ({ team, results, overseasLimit, sharing, onShare }) => {
+// slot: batting position in the XI; xi: tag the player as in the XI (the by-role view)
+const SquadRow = ({ player, slot, xi = false }) => (
+  <li className="flex items-center gap-2.5 rounded-md bg-white/[0.02] px-2 py-1.5">
+    {slot !== undefined && <span className="w-5 shrink-0 text-center font-display text-base font-bold tabular text-signal">{slot}</span>}
+    <PlayerPhoto player={player} className="size-9 shrink-0 text-xs" />
+    <span className="line-clamp-2 min-w-0 flex-1 text-sm font-semibold leading-tight">
+      {player.name}
+      {isOverseas(player) && <OverseasMark />}
+    </span>
+    {xi && <Tag tone="signal" className="shrink-0">XI</Tag>}
+    <RatingBadge rating={player.rating} size="sm" />
+    <span className="w-[4.5rem] shrink-0 text-right font-display text-base font-semibold tabular">{formatPrice(player.bid)}</span>
+  </li>
+);
+
+const GroupHeading = ({ children, count }) => (
+  <h4 className="mb-1.5 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-haze">
+    {children}
+    {count !== undefined && <span className="text-mist tabular">{count}</span>}
+    <span className="h-px flex-1 bg-white/6" aria-hidden />
+  </h4>
+);
+
+const byRoleThenPrice = (a, b) => ROLES.indexOf(a.role) - ROLES.indexOf(b.role) || b.bid - a.bid;
+
+// view: 'order' (the XI in batting order, then the bench) or 'role'. onEdit only for your own squad.
+const SquadCard = ({ team, results, overseasLimit, sharing, onShare, view, onEdit }) => {
   const franchise = TEAMS_BY_ID.get(team.teamId);
   const busy = sharing === team.teamId;
-  const inXI = new Set(team.strength.bestXI.map(p => p.id));
+  const { xi, bench, custom } = team.lineup;
+  const inXI = new Set(xi.map(p => p.id));
   return (
     <Panel className="min-w-0" bodyClassName="p-0">
       <span className="absolute inset-x-0 top-0 h-0.5" style={{ background: franchise?.colors.primary }} aria-hidden />
@@ -310,6 +343,32 @@ const SquadCard = ({ team, results, overseasLimit, sharing, onShare }) => {
 
       {team.players.length === 0 ? (
         <p className="px-4 py-6 text-center text-sm text-haze">No players bought.</p>
+      ) : view === 'order' ? (
+        <div className="space-y-3 p-4">
+          <section>
+            <div className="mb-1.5 flex items-center gap-2">
+              <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-haze">Playing XI</h4>
+              {custom ? <Tag tone="volt">Manager&apos;s order</Tag> : <Tag>Suggested</Tag>}
+              <span className="h-px flex-1 bg-white/6" aria-hidden />
+              {onEdit && (
+                <Button variant="outline" size="sm" icon={Pencil} onClick={() => onEdit(team)}>
+                  Edit XI
+                </Button>
+              )}
+            </div>
+            <ol className="space-y-1" aria-label={`${team.name} batting order`}>
+              {xi.map((player, index) => <SquadRow key={player.id} player={player} slot={index + 1} />)}
+            </ol>
+          </section>
+          {bench.length > 0 && (
+            <section>
+              <GroupHeading count={bench.length}>Bench</GroupHeading>
+              <ul className="space-y-1">
+                {[...bench].sort(byRoleThenPrice).map(player => <SquadRow key={player.id} player={player} />)}
+              </ul>
+            </section>
+          )}
+        </div>
       ) : (
         <div className="space-y-3 p-4">
           {ROLES.map(role => {
@@ -317,24 +376,9 @@ const SquadCard = ({ team, results, overseasLimit, sharing, onShare }) => {
             if (!group.length) return null;
             return (
               <section key={role}>
-                <h4 className="mb-1.5 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-haze">
-                  {ROLE_META[role].plural}
-                  <span className="text-mist tabular">{group.length}</span>
-                  <span className="h-px flex-1 bg-white/6" aria-hidden />
-                </h4>
+                <GroupHeading count={group.length}>{ROLE_META[role].plural}</GroupHeading>
                 <ul className="space-y-1">
-                  {group.map(player => (
-                    <li key={player.id} className="flex items-center gap-2.5 rounded-md bg-white/[0.02] px-2 py-1.5">
-                      <PlayerPhoto player={player} className="size-9 shrink-0 text-xs" />
-                      <span className="line-clamp-2 min-w-0 flex-1 text-sm font-semibold leading-tight">
-                        {player.name}
-                        {isOverseas(player) && <OverseasMark />}
-                      </span>
-                      {inXI.has(player.id) && <Tag tone="signal" className="shrink-0">XI</Tag>}
-                      <RatingBadge rating={player.rating} size="sm" />
-                      <span className="w-[4.5rem] shrink-0 text-right font-display text-base font-semibold tabular">{formatPrice(player.bid)}</span>
-                    </li>
-                  ))}
+                  {group.map(player => <SquadRow key={player.id} player={player} xi={inXI.has(player.id)} />)}
                 </ul>
               </section>
             );
@@ -345,7 +389,14 @@ const SquadCard = ({ team, results, overseasLimit, sharing, onShare }) => {
   );
 };
 
-const SquadsTab = ({ results, overseasLimit, sharing, onShare }) => {
+const SQUAD_VIEWS = [
+  { id: 'order', label: 'Batting order', icon: ListOrdered },
+  { id: 'role', label: 'By role', icon: Users },
+];
+
+// canEdit: the auction is over, so managers can set their own XI
+const SquadsTab = ({ results, overseasLimit, sharing, onShare, canEdit, onEdit }) => {
+  const [view, setView] = useLocalSetting('squadView', 'order');
   const mine = results.teams.find(t => t.isYou);
   const others = results.teams
     .filter(t => !t.isYou && t.players.length > 0)
@@ -359,10 +410,22 @@ const SquadsTab = ({ results, overseasLimit, sharing, onShare }) => {
     );
   }
   return (
-    <div className="grid items-start gap-4 lg:grid-cols-2">
-      {cards.map(team => (
-        <SquadCard key={team.id} team={team} results={results} overseasLimit={overseasLimit} sharing={sharing} onShare={onShare} />
-      ))}
+    <div className="space-y-3">
+      <Segmented options={SQUAD_VIEWS} value={view === 'role' ? 'role' : 'order'} onChange={setView} size="sm" />
+      <div className="grid items-start gap-4 lg:grid-cols-2">
+        {cards.map(team => (
+          <SquadCard
+            key={team.id}
+            team={team}
+            results={results}
+            overseasLimit={overseasLimit}
+            sharing={sharing}
+            onShare={onShare}
+            view={view === 'role' ? 'role' : 'order'}
+            onEdit={canEdit && team.isYou ? onEdit : undefined}
+          />
+        ))}
+      </div>
     </div>
   );
 };
@@ -437,10 +500,12 @@ const Results = () => {
   const { id = '' } = useParams();
   const roomId = id.toUpperCase();
   const { user } = useAuth();
-  const { currentAuction, roomTeams, loading, joinAuction } = useAuction();
+  const { currentAuction, roomTeams, loading, joinAuction, saveBattingOrder } = useAuction();
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [sharing, setSharing] = useState(null);
+  // teamId of the squad whose XI is being edited
+  const [editing, setEditing] = useState(null);
   const posterHost = useRef(null);
   // joinAuction turns loading on and off again once the server answers; remember
   // that it happened so an unknown room shows "not found" instead of a loader forever
@@ -488,6 +553,12 @@ const Results = () => {
   const mode = MODE_META[currentAuction.auctionType];
   const status = currentAuction.status;
   const posterTeam = sharing ? results.teams.find(t => t.teamId === sharing) : null;
+  const editingTeam = editing ? results.teams.find(t => t.teamId === editing && t.isYou) : null;
+
+  const saveLineup = async (playerIds) => {
+    await saveBattingOrder(roomId, playerIds);
+    toast({ message: 'Batting order saved', tone: 'success' });
+  };
 
   const shareSquad = async (team) => {
     if (sharing) return;
@@ -564,7 +635,14 @@ const Results = () => {
         <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} role="tabpanel">
           {tab === 'standings' && <StandingsTab results={results} />}
           {tab === 'squads' && (
-            <SquadsTab results={results} overseasLimit={currentAuction.overseasLimit} sharing={sharing} onShare={shareSquad} />
+            <SquadsTab
+              results={results}
+              overseasLimit={currentAuction.overseasLimit}
+              sharing={sharing}
+              onShare={shareSquad}
+              canEdit={status === 'completed'}
+              onEdit={(team) => setEditing(team.teamId)}
+            />
           )}
           {tab === 'top' && <TopBuysTab results={results} />}
           {tab === 'ai' && <PowerRankings auctionId={roomId} isHost={currentAuction.hostId === user.uid} />}
@@ -574,11 +652,24 @@ const Results = () => {
         </motion.div>
       </div>
 
+      {editingTeam && (
+        <LineupEditor
+          open
+          onClose={() => setEditing(null)}
+          team={editingTeam}
+          lineup={editingTeam.lineup}
+          squadLimit={results.squadLimit}
+          overseasLimit={currentAuction.overseasLimit}
+          onSave={saveLineup}
+        />
+      )}
+
       {/* Off-screen stage for the squad poster while it's being exported */}
       <div ref={posterHost} className="pointer-events-none fixed top-0" style={{ left: -12000 }} aria-hidden>
         {posterTeam && (
           <SquadPoster
             team={posterTeam}
+            lineup={posterTeam.lineup}
             managerName={posterTeam.managerName}
             squadLimit={results.squadLimit}
             overseasLimit={currentAuction.overseasLimit}

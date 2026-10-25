@@ -1,12 +1,14 @@
 // End-to-end: auth and sessions, rooms, the live lobby, chat, host controls, server-run
 // bidding (latecomers and simultaneous bids included), pause / resume / end, restart
-// recovery, the squad / overseas / purse rules, and the fantasy league, its admin and
-// scoring, against a real server and database.
+// recovery, the squad / overseas / purse rules, batting orders, and the fantasy league,
+// its admin and scoring, against a real server and database.
 import { TestClient, createChecker, startServer } from './helpers.mjs';
 import { prisma } from '../server/db.js';
 import { IPL_PLAYERS } from '../src/data/players.js';
 import { signAccessToken } from '../server/auth/tokens.js';
 import { calculatePoints, collectMatchPlayers, findPlayer, saveMatch } from '../scripts/lib/fantasyScoring.js';
+import { lineupFor, lineupProblem, suggestBattingOrder } from '../src/lib/lineup.js';
+import { profileOf } from '../src/lib/playerProfile.js';
 
 const PORT = 3099;
 const ADMIN_EMAIL = 'admin@arena.test';
@@ -260,6 +262,42 @@ try {
   check('fantasy player stats load', (await host.req('GET', '/api/fantasy/player-stats')).status === 200);
   check('admin endpoints are forbidden for everyone else', (await host.req('POST', `/api/admin/player-stats/${fullIds[0]}/match`, { points: 10 })).status === 403);
   check('me says a guest is not an admin', (await host.req('GET', '/api/auth/me')).data.user.isAdmin === false);
+
+  // ─── Batting order ───
+  const saveLineup = (client, playerIds) => client.emit('lineup:save', { roomId: rulesRoom, playerIds });
+  const cskOrder = () => host.state.teams.find(t => t.teamId === 'CSK')?.battingOrder.join();
+  check('a batting order waits for the end of the auction', /once the auction is over/.test((await saveLineup(full, fullIds.slice(0, 11))).error || ''));
+  await host.emit('auction:end', { roomId: rulesRoom });
+  await eventually(host, () => host.state.status === 'completed', 5000, 'rules room ended');
+  check('the XI must be full', /needs 11 players/.test((await saveLineup(full, fullIds.slice(0, 10))).error || ''));
+  check('a player can only bat once', /only bat once/.test((await saveLineup(full, [...fullIds.slice(0, 10), fullIds[0]])).error || ''));
+  check('only players you bought can bat', /players you bought/.test((await saveLineup(full, [...fullIds.slice(0, 10), abroadIds[0]])).error || ''));
+  check('a list that is not player ids is refused', /Invalid batting order/.test((await saveLineup(full, 'not a list')).error || ''));
+  const outsider = await signedIn('Outsider');
+  await outsider.connect();
+  check('someone outside the room has no batting order', /Join the room first/.test((await saveLineup(outsider, fullIds.slice(0, 11))).error || ''));
+  outsider.disconnect();
+  const myOrder = fullIds.slice(0, 11).reverse();
+  const savedOrder = await saveLineup(full, myOrder);
+  check('a manager saves their XI in batting order', savedOrder.ok && savedOrder.battingOrder.join() === myOrder.join(), JSON.stringify(savedOrder));
+  check('the room sees the batting order', await eventually(host, () => cskOrder() === myOrder.join(), 3000, 'batting order'));
+  check('the batting order is stored', (await prisma.roomMember.findFirst({ where: { roomId: rulesRoom, teamId: 'CSK' } }))?.battingOrder.join() === myOrder.join());
+  check('an all-overseas squad fields an XI as big as the overseas cap', (await saveLineup(abroad, abroadIds.slice(0, 4))).ok);
+  check('an empty list goes back to the suggested XI', (await saveLineup(full, [])).ok && await eventually(host, () => cskOrder() === '', 3000, 'reset'));
+
+  // The rules on their own: 8 Indians and 5 overseas players in a 25-player squad with 8 overseas allowed
+  const indians = late.filter(p => !isOverseas(p)).slice(0, 8);
+  const overseas = late.filter(isOverseas).slice(0, 5);
+  const mixed = [...indians, ...overseas];
+  check('the XI is capped at 4 overseas', lineupProblem([...indians.slice(0, 6), ...overseas].map(p => p.id), mixed, 25, 8) === 'At most 4 overseas players in the XI');
+  check('7 Indians and 4 overseas make a legal XI', lineupProblem([...indians.slice(0, 7), ...overseas.slice(0, 4)].map(p => p.id), mixed, 25, 8) === null);
+  check('a 5-player mode wants an XI of 5', lineupProblem(indians.slice(0, 5).map(p => p.id), indians, 5, 2) === null && /needs 5/.test(lineupProblem(indians.slice(0, 4).map(p => p.id), indians, 5, 2)));
+  const ranks = { open: 0, top: 1, middle: 2, finish: 3, tail: 4 };
+  const suggested = suggestBattingOrder(fullIds.slice(0, 11).map(id => IPL_PLAYERS.find(p => p.id === id)));
+  const suggestedRanks = suggested.map(p => ranks[profileOf(p).order]).filter(r => r !== undefined);
+  check('the suggested order runs openers to tail', suggestedRanks.every((r, i) => i === 0 || r >= suggestedRanks[i - 1]), JSON.stringify(suggested.map(p => profileOf(p).order)));
+  const shown = lineupFor(mixed, mixed.slice(0, 11), [overseas[0].id, 'someone-sold-elsewhere']);
+  check('a saved order with an unknown player falls back to the suggested XI', !shown.custom && shown.xi.length === 11 && shown.bench.length === 2);
 
   // ─── Fantasy admin ───
   // Admins have to come through Google, so the test makes that account directly and signs its token

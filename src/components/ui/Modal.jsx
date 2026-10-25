@@ -46,7 +46,8 @@ const Modal = ({ open, onClose, title, subtitle, wide = false, children, footer 
                 <X size={18} />
               </button>
             </header>
-            <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-5 py-4">{children}</div>
+            {/* layoutScroll keeps drag-to-reorder lists lined up once the body has scrolled */}
+            <motion.div layoutScroll className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-5 py-4">{children}</motion.div>
             {footer && <footer className="border-t border-white/6 px-5 py-3">{footer}</footer>}
           </motion.div>
         </motion.div>

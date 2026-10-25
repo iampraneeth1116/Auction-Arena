@@ -40,7 +40,8 @@ Claim a franchise, bid against each other on 500+ real players, let bots fill th
 - **Arena Rating** — every player gets a 1–99 rating. Their auction tier (marquee, Set 1 … uncapped) sets the band and their T20 career places them inside it, compared with others in the same role, so the best bowler rates as highly as the best batter. A curated next-IPL outlook (`src/data/playerOutlook.js`) then moves about a hundred players up or down for recent IPL and T20I form, retirements, injuries and bans, and their player card shows why.
 - **Arena Strength** — every squad is scored on the best legal playing XI it can field (an empty place counts as zero) and its depth. The XI's combination counts too: a keeper, openers and a finisher, a left/right mix and an anchor up top, power hitters, pace and spin, and powerplay and death bowling, using a playing profile for each player.
 - **AI power rankings** — an AI analyst (Groq) previews how each franchise would do in the next IPL, grading XI quality, balance, depth and value. The final score is half the AI's view and half Arena Strength, and an unfinished squad loses points either way.
-- **Squad posters** — share any squad as an image.
+- **Your XI and batting order** — after the auction, each manager can pick their playing XI from their squad and drag it into their batting order (it starts from the best XI, openers first). The whole room sees it on the squad cards and posters; Arena Strength still judges the best XI.
+- **Squad posters** — share any squad as an image, with the XI numbered in batting order.
 - **Fantasy league** — pick an XI, captain (2×), vice-captain (1.5×) and impact player from the players you bought; a daily job scores real IPL matches from CricAPI.
 
 ## 🛠 Tech Stack
@@ -196,7 +197,7 @@ auction-arena/
 │   │   ├── auction/           # The live room: lot card, price board, bid console, team board, feed
 │   │   └── fantasy/           # Fantasy XI picker and leaderboard
 │   ├── hooks/                 # useAuth, useAuction, voice auctioneer, room sounds, local settings
-│   ├── lib/                   # API and socket clients, Arena Rating, best-XI judging, formatting, image sharing
+│   ├── lib/                   # API and socket clients, Arena Rating, best-XI judging, batting orders, formatting, image sharing
 │   └── data/                  # Players, playing profiles, next-IPL outlook and teams
 ├── tests/                     # End-to-end tests (npm test)
 └── .github/workflows/         # CI, and the daily fantasy update

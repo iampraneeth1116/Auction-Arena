@@ -183,6 +183,12 @@ export const AuctionProvider = ({ children }) => {
     []
   );
 
+  // playerIds: the manager's XI in batting order, or [] for the suggested XI
+  const saveBattingOrder = useCallback(
+    (roomId, playerIds) => emitWithAck('lineup:save', { roomId, playerIds }),
+    []
+  );
+
   const value = {
     currentAuction,
     team,
@@ -206,6 +212,7 @@ export const AuctionProvider = ({ children }) => {
     updateRoomSettings,
     kickPlayer,
     sendMessage,
+    saveBattingOrder,
   };
 
   return (
