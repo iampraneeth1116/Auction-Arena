@@ -136,7 +136,7 @@ Open http://localhost:5173.
 | --- | --- |
 | `npm run dev` / `npm run dev:server` | Frontend and backend in development |
 | `npm run build` / `npm start` | Build the React app, then serve everything from one Node process |
-| `npm run lint` | ESLint over the app, server, scripts and tests |
+| `npm run lint` | ESLint over the app, server, scripts, tests and desktop app |
 | `npm run db:migrate` | Create a migration after editing `prisma/schema.prisma` |
 | `npm run db:deploy` | Apply migrations to the database in `DATABASE_URL` |
 | `npm run fantasy:update` | Score IPL matches finished since the last run (daily job) |
@@ -172,6 +172,21 @@ Run a single instance: live auction state is held in the server's memory (and sa
 
 **Daily fantasy job:** add `DATABASE_URL` and `CRICKET_API_KEY` under the repo's **Settings → Secrets and variables → Actions**. Without them the job skips quietly.
 
+## 🖥 Desktop app
+
+`desktop/` is an Electron app that opens the live site in its own window. The pages, API and live rooms stay on the server, so every deploy reaches the app at once. It has its own `package.json`, so the website's install and build never download Electron.
+
+```bash
+cd desktop
+npm install
+npm start          # opens the live site
+npm run local      # opens http://localhost:5173 instead, to try changes first
+```
+
+`npm start -- --url=<address>` opens another server (https, or a localhost address).
+
+The window only ever shows the site itself: links to other sites open in your browser, the page has no Node.js access (context isolation and the sandbox are on), and it may only ask for notifications, the clipboard and full screen.
+
 ## 📂 Project Structure
 
 ```
@@ -199,6 +214,7 @@ auction-arena/
 │   ├── hooks/                 # useAuth, useAuction, voice auctioneer, room sounds, local settings
 │   ├── lib/                   # API and socket clients, Arena Rating, best-XI judging, batting orders, formatting, image sharing
 │   └── data/                  # Players, playing profiles, next-IPL outlook and teams
+├── desktop/                   # Electron app that opens the live site (own package.json)
 ├── tests/                     # End-to-end tests (npm test)
 └── .github/workflows/         # CI, and the daily fantasy update
 ```
