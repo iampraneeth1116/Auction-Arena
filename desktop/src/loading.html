@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+  <title>Auction Arena</title>
+  <!-- Shown while the app waits for the server. Self-contained: it must work with no internet. -->
+  <style>
+    :root {
+      --ink: #05070f;
+      --panel: #0a0f1f;
+      --signal: #22d3ee;
+      --snow: #eef2ff;
+      --mist: #94a3b8;
+      --flare: #fb7185;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: grid;
+      place-items: center;
+      background: radial-gradient(ellipse at center, #0b1224 0%, var(--ink) 70%);
+      color: var(--snow);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      -webkit-user-select: none;
+      user-select: none;
+      cursor: default;
+    }
+    main { width: min(420px, 86vw); text-align: center; }
+    .brand { display: inline-flex; align-items: center; gap: 14px; }
+    .brand svg { width: 52px; height: 52px; }
+    .wordmark {
+      font-family: "Barlow Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
+      font-stretch: condensed;
+      font-weight: 800;
+      font-size: 30px;
+      letter-spacing: 0.06em;
+    }
+    .wordmark span { color: var(--signal); }
+    .bar {
+      position: relative;
+      height: 3px;
+      margin: 34px auto 26px;
+      overflow: hidden;
+      border-radius: 2px;
+      background: rgba(34, 211, 238, 0.14);
+    }
+    .bar::after {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 38%;
+      border-radius: 2px;
+      background: var(--signal);
+      animation: sweep 1.6s ease-in-out infinite;
+    }
+    body[data-state="offline"] .bar { background: rgba(251, 113, 133, 0.16); }
+    body[data-state="offline"] .bar::after { background: var(--flare); }
+    @keyframes sweep {
+      from { transform: translateX(-100%); }
+      to { transform: translateX(265%); }
+    }
+    h1 {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+    p { margin: 10px 0 0; font-size: 14px; line-height: 1.5; color: var(--mist); }
+    .elapsed { margin-top: 18px; font-size: 12px; font-variant-numeric: tabular-nums; color: #64748b; min-height: 1em; }
+  </style>
+</head>
+<body data-state="connecting">
+  <main>
+    <div class="brand">
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <rect width="64" height="64" rx="12" fill="#0a0f1f"/>
+        <path d="M14 50 L22 14 H30 L22 50 Z" fill="#22d3ee"/>
+        <path d="M30 50 L39 14 H46 L54 50 H46.5 L44.6 41 H38.4 L36.6 50 Z M39.8 34 H43.2 L41.5 25.5 Z" fill="#eef2ff"/>
+      </svg>
+      <div class="wordmark">AUCTION <span>ARENA</span></div>
+    </div>
+    <div class="bar" aria-hidden="true"></div>
+    <h1 id="title">Connecting to the arena</h1>
+    <p id="detail">Just a moment.</p>
+    <div class="elapsed" id="elapsed"></div>
+  </main>
+  <script>
+    // The app calls showStatus() as it checks whether the server is up
+    const MESSAGES = {
+      connecting: ['Connecting to the arena', 'Just a moment.'],
+      waking: ['Waking up the server', "The server sleeps when nobody's playing. It takes up to a minute to wake up."],
+      slow: ['Still waking up the server', 'This is taking longer than usual. The app keeps trying.'],
+      offline: ['No internet connection', 'Check your connection. The app keeps trying every few seconds.'],
+    };
+    const started = Date.now();
+    window.showStatus = (state) => {
+      const [title, detail] = MESSAGES[state] ?? MESSAGES.connecting;
+      document.body.dataset.state = state;
+      document.getElementById('title').textContent = title;
+      document.getElementById('detail').textContent = detail;
+    };
+    setInterval(() => {
+      const seconds = Math.round((Date.now() - started) / 1000);
+      document.getElementById('elapsed').textContent = seconds >= 5 ? `${seconds} s` : '';
+    }, 1000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- The favicon's mark on the macOS icon grid: an 824px tile with 100px of margin -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="#0a0f1f"/>
+  <rect x="100.5" y="100.5" width="823" height="823" rx="184.5" fill="none" stroke="#22d3ee" stroke-opacity="0.18"/>
+  <g transform="translate(100 100) scale(12.875)">
+    <path d="M14 50 L22 14 H30 L22 50 Z" fill="#22d3ee"/>
+    <path d="M30 50 L39 14 H46 L54 50 H46.5 L44.6 41 H38.4 L36.6 50 Z M39.8 34 H43.2 L41.5 25.5 Z" fill="#eef2ff"/>
+  </g>
+</svg>
