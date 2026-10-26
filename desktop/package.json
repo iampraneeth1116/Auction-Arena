@@ -1,0 +1,16 @@
+{
+  "name": "auction-arena-desktop",
+  "productName": "Auction Arena",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Auction Arena desktop app: the live site in its own window",
+  "type": "module",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "local": "electron . --url=http://localhost:5173"
+  },
+  "devDependencies": {
+    "electron": "^44.9.3"
+  }
+}
