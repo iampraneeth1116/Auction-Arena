@@ -187,6 +187,8 @@ npm run local      # opens http://localhost:5173 instead, to try changes first
 
 The window only ever shows the site itself: links to other sites open in your browser, the page has no Node.js access (context isolation and the sandbox are on), and it may only ask for notifications, the clipboard and full screen.
 
+Until the server answers `/api/health`, the app shows its own loading screen instead of a blank window or Render's wake-up page: "Waking up the server" while a sleeping free-plan server starts, "No internet connection" when offline. It keeps checking and opens the site as soon as the server is up, and does the same if a page later fails to load. The menu bar adds **Go** (Home, Back, Forward) and **Help** (How to Play, Privacy Policy, Open in Your Browser); these move around the site without reloading it, so a live room stays connected. The app icon is drawn in `desktop/assets/icon.svg` and rendered to `icon.png` (1024 px).
+
 ## 📂 Project Structure
 
 ```
