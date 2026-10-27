@@ -24,6 +24,7 @@ import Stat from '../components/ui/Stat';
 import Tag from '../components/ui/Tag';
 import TeamCrest from '../components/ui/TeamCrest';
 import { buttonClasses } from '../components/ui/styles';
+import OpenInAppLink from '../components/OpenInAppLink';
 import RoomChat from '../components/RoomChat';
 import SignInOptions from '../components/SignInOptions';
 
@@ -85,6 +86,7 @@ const SignInGate = ({ roomCode, watching }) => (
         <SignInOptions />
       </div>
     </Panel>
+    <OpenInAppLink path={`/lobby/${roomCode}${watching ? '?watch=1' : ''}`} />
     <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-haze transition-colors hover:text-snow">
       <House size={14} /> Back to home
     </Link>

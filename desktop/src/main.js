@@ -2,6 +2,7 @@
 // the live rooms all stay on the server, so every deploy reaches the app at once.
 import path from 'node:path';
 import { app, BrowserWindow, net, session, shell } from 'electron';
+import { PROTOCOL, linkInArgs, routeFromLink } from './links.js';
 import { buildMenu } from './menu.js';
 
 const PRODUCTION_URL = 'https://auction-arena-g1ot.onrender.com';
@@ -105,16 +106,22 @@ async function openWhenServerReady(win, url) {
 }
 
 let mainWindow = null;
+// The page the next window opens on: home, or the room an invite link was for
+let firstRoute = routeFromLink(linkInArgs(process.argv)) ?? '/';
 
 // Moves to a page of the site without reloading it, so a live room stays connected
 function goTo(route) {
   if (!mainWindow) return;
+  const url = new URL(route, START_URL).href;
   if (waiting.has(mainWindow.id)) {
-    waiting.set(mainWindow.id, new URL(route, START_URL).href);
+    waiting.set(mainWindow.id, url);
     return;
   }
   const { webContents } = mainWindow;
-  if (!isAppPage(webContents.getURL())) return;
+  if (!isAppPage(webContents.getURL())) {
+    openWhenServerReady(mainWindow, url);
+    return;
+  }
   webContents.executeJavaScript(
     `history.pushState(null, '', ${JSON.stringify(route)}); dispatchEvent(new PopStateEvent('popstate'));`,
   ).catch(() => {});
@@ -130,6 +137,21 @@ function goInHistory(step) {
 function openInBrowser() {
   const current = mainWindow?.webContents.getURL();
   shell.openExternal(current && isAppPage(current) ? current : START_URL.href);
+}
+
+// An auctionarena:// link was opened: show that room in the window, or open a window on it
+function openLink(link) {
+  const route = routeFromLink(link);
+  if (!route) return;
+  if (!mainWindow) {
+    firstRoute = route;
+    if (app.isReady()) createWindow(); // macOS keeps running after its last window closes
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  goTo(route);
 }
 
 function createWindow() {
@@ -179,17 +201,30 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
-  openWhenServerReady(mainWindow, START_URL.href);
+  openWhenServerReady(mainWindow, new URL(firstRoute, START_URL).href);
+  firstRoute = '/';
 }
 
-// One copy of the app at a time: opening it again brings the open window forward
+// One copy of the app at a time: opening it again brings the open window forward, and an
+// invite link opened on Windows or Linux arrives here from the copy that was started for it
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, argv) => {
+    const link = linkInArgs(argv);
+    if (link) {
+      openLink(link);
+      return;
+    }
     if (!mainWindow) return;
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
+  });
+
+  // macOS hands invite links to the running app, even while it's still starting up
+  app.on('open-url', (event, link) => {
+    event.preventDefault();
+    openLink(link);
   });
 
   // No page may embed other web content in a <webview>
@@ -208,6 +243,9 @@ if (!app.requestSingleInstanceLock()) {
     });
     // An installed app has its icon built in; while developing, the Dock shows Electron's
     if (process.platform === 'darwin' && !app.isPackaged) app.dock?.setIcon(ICON_PATH);
+    // The installed app answers auctionarena:// links. A development copy doesn't register,
+    // so it never takes links away from the installed app.
+    if (app.isPackaged) app.setAsDefaultProtocolClient(PROTOCOL);
     buildMenu({ goTo, goBack: () => goInHistory(-1), goForward: () => goInHistory(1), openInBrowser });
     createWindow();
     // macOS keeps the app running with no windows; clicking the Dock icon opens one again
