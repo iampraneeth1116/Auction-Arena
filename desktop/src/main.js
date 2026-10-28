@@ -1,7 +1,7 @@
 // The Auction Arena desktop app: the live site in its own window. The pages, the API and
 // the live rooms all stay on the server, so every deploy reaches the app at once.
 import path from 'node:path';
-import { app, BrowserWindow, net, session, shell } from 'electron';
+import { app, BrowserWindow, net, powerSaveBlocker, session, shell } from 'electron';
 import { PROTOCOL, linkInArgs, routeFromLink } from './links.js';
 import { buildMenu } from './menu.js';
 
@@ -139,6 +139,18 @@ function openInBrowser() {
   shell.openExternal(current && isAppPage(current) ? current : START_URL.href);
 }
 
+// The screen stays on while an auction room is open (bids can be minutes apart with
+// nobody touching the keyboard), and may sleep again once you leave the room
+let screenAwakeId = null;
+function keepScreenAwake(on) {
+  if (on && screenAwakeId === null) screenAwakeId = powerSaveBlocker.start('prevent-display-sleep');
+  if (!on && screenAwakeId !== null) {
+    powerSaveBlocker.stop(screenAwakeId);
+    screenAwakeId = null;
+  }
+}
+const isAuctionRoom = (url) => isAppPage(url) && new URL(url).pathname.startsWith('/auction/');
+
 // An auctionarena:// link was opened: show that room in the window, or open a window on it
 function openLink(link) {
   const route = routeFromLink(link);
@@ -173,6 +185,9 @@ function createWindow() {
       // otherwise slow the page's timers there (down to once a minute after a while),
       // and the countdown and the voice auctioneer would fall behind the room
       backgroundThrottling: false,
+      // Sound needs no click first: the countdown, anthems and voice auctioneer work as soon
+      // as a room opens, even straight after a reload (Electron's default, kept on purpose)
+      autoplayPolicy: 'no-user-gesture-required',
     },
   });
   const { webContents } = mainWindow;
@@ -197,13 +212,24 @@ function createWindow() {
     if (isMainFrame && !aborted && isAppPage(url)) openWhenServerReady(mainWindow, url);
   });
 
+  // Both full page loads and the site's own page changes
+  webContents.on('did-navigate', (_event, url) => keepScreenAwake(isAuctionRoom(url)));
+  webContents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
+    if (isMainFrame) keepScreenAwake(isAuctionRoom(url));
+  });
+
   mainWindow.once('ready-to-show', () => mainWindow.show());
   mainWindow.on('closed', () => {
     mainWindow = null;
+    keepScreenAwake(false);
   });
   openWhenServerReady(mainWindow, new URL(firstRoute, START_URL).href);
   firstRoute = '/';
 }
+
+// Chromium on Linux speaks (the voice auctioneer) only through speech-dispatcher, which it
+// leaves off unless asked. The system needs speech-dispatcher installed, as most desktops have.
+if (process.platform === 'linux') app.commandLine.appendSwitch('enable-speech-dispatcher');
 
 // One copy of the app at a time: opening it again brings the open window forward, and an
 // invite link opened on Windows or Linux arrives here from the copy that was started for it

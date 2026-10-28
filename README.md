@@ -189,6 +189,8 @@ The window only ever shows the site itself: links to other sites open in your br
 
 Until the server answers `/api/health`, the app shows its own loading screen instead of a blank window or Render's wake-up page: "Waking up the server" while a sleeping free-plan server starts, "No internet connection" when offline. It keeps checking and opens the site as soon as the server is up, and does the same if a page later fails to load. The menu bar adds **Go** (Home, Back, Forward) and **Help** (How to Play, Privacy Policy, Open in Your Browser); these move around the site without reloading it, so a live room stays connected. The app icon is drawn in `desktop/assets/icon.svg` and rendered to `icon.png` (1024 px).
 
+**During an auction:** sound needs no click first (countdown beeps, anthems and the voice auctioneer work as soon as a room opens, even right after a reload), the screen stays awake while an auction room is open and may sleep again once you leave it, and the page keeps full-speed timers behind other windows. On Linux the app turns on speech-dispatcher for the voice auctioneer (most desktops have it installed).
+
 **Invite links:** `auctionarena://lobby/AB12CD` opens that lobby in the app (also `auction/` and `summary/`, and `?watch=1` to watch), whether the app is closed, open, or open with no window. Any other `auctionarena://` link is ignored, so a link from a website can only land on one of those pages. In a desktop browser, the signed-out invite card offers "Have the desktop app? Open this room in it". Only the installed app registers for these links (a development copy doesn't, so it never takes them over); try one in development with `npm start -- auctionarena://lobby/AB12CD`.
 
 ## 📂 Project Structure
