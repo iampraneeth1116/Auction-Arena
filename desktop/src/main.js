@@ -1,7 +1,8 @@
 // The Auction Arena desktop app: the live site in its own window. The pages, the API and
 // the live rooms all stay on the server, so every deploy reaches the app at once.
 import path from 'node:path';
-import { app, BrowserWindow, net, powerSaveBlocker, session, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, net, powerMonitor, powerSaveBlocker, session, shell } from 'electron';
+import { notify, removeTray, showTray } from './background.js';
 import { PROTOCOL, linkInArgs, routeFromLink } from './links.js';
 import { buildMenu } from './menu.js';
 
@@ -139,17 +140,72 @@ function openInBrowser() {
   shell.openExternal(current && isAppPage(current) ? current : START_URL.href);
 }
 
-// The screen stays on while an auction room is open (bids can be minutes apart with
-// nobody touching the keyboard), and may sleep again once you leave the room
+const isAuctionRoom = (url) => isAppPage(url) && new URL(url).pathname.startsWith('/auction/');
+
+// The screen stays on while an auction room is on screen (bids can be minutes apart with
+// nobody touching the keyboard), and may sleep once you leave the room or close the window
 let screenAwakeId = null;
-function keepScreenAwake(on) {
+function updateScreenAwake() {
+  const on = Boolean(mainWindow?.isVisible() && !mainWindow.isMinimized() && isAuctionRoom(mainWindow.webContents.getURL()));
   if (on && screenAwakeId === null) screenAwakeId = powerSaveBlocker.start('prevent-display-sleep');
   if (!on && screenAwakeId !== null) {
     powerSaveBlocker.stop(screenAwakeId);
     screenAwakeId = null;
   }
 }
-const isAuctionRoom = (url) => isAppPage(url) && new URL(url).pathname.startsWith('/auction/');
+
+// Brings the window back, from the tray, the Dock, a notification or a second launch
+function showWindow() {
+  if (!mainWindow) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  removeTray();
+  updateScreenAwake();
+}
+
+// Only tells you what you can't already see
+function notifyIfAway(title, body) {
+  if (mainWindow?.isVisible() && mainWindow.isFocused()) return;
+  notify(title, body, showWindow);
+}
+
+// The site moves from the lobby to the room when the auction starts, and from the room to
+// the results when it ends, so the page change itself says what happened
+let lastPath = '';
+function onPageChange(url) {
+  updateScreenAwake();
+  const pagePath = isAppPage(url) ? new URL(url).pathname : '';
+  const [, from, fromCode] = lastPath.match(/^\/(lobby|auction)\/(\w+)/) ?? [];
+  const [, to, toCode] = pagePath.match(/^\/(auction|summary)\/(\w+)/) ?? [];
+  lastPath = pagePath;
+  if (!from || fromCode !== toCode) return;
+  if (from === 'lobby' && to === 'auction') notifyIfAway('The auction has started', `Room ${toCode} is live.`);
+  if (from === 'auction' && to === 'summary') notifyIfAway('The auction has ended', `See the results for room ${toCode}.`);
+}
+
+// Closing the window during a live auction keeps you in the room, because leaving by accident
+// would lose your turn to bid. Anywhere else, closing simply closes.
+let quitting = false;
+let toldAboutTray = false;
+
+function stayInAuction() {
+  // Not every Linux desktop shows tray icons, and a hidden window could never come back there
+  if (process.platform === 'linux') {
+    mainWindow.minimize();
+  } else {
+    mainWindow.hide();
+    showTray({ onOpen: showWindow, onQuit: () => app.quit() });
+  }
+  updateScreenAwake();
+  if (toldAboutTray) return;
+  toldAboutTray = true;
+  const whereToLook = { darwin: 'the menu bar icon', win32: 'the taskbar tray icon' }[process.platform] ?? 'the app in your taskbar';
+  notify('Still in the auction', `You're still in the room. Use ${whereToLook} to come back, or quit to leave.`, showWindow);
+}
 
 // An auctionarena:// link was opened: show that room in the window, or open a window on it
 function openLink(link) {
@@ -160,9 +216,7 @@ function openLink(link) {
     if (app.isReady()) createWindow(); // macOS keeps running after its last window closes
     return;
   }
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.show();
-  mainWindow.focus();
+  showWindow();
   goTo(route);
 }
 
@@ -213,15 +267,28 @@ function createWindow() {
   });
 
   // Both full page loads and the site's own page changes
-  webContents.on('did-navigate', (_event, url) => keepScreenAwake(isAuctionRoom(url)));
+  webContents.on('did-navigate', (_event, url) => onPageChange(url));
   webContents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
-    if (isMainFrame) keepScreenAwake(isAuctionRoom(url));
+    if (isMainFrame) onPageChange(url);
   });
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.on('minimize', updateScreenAwake);
+  mainWindow.on('restore', updateScreenAwake);
+  mainWindow.on('close', (event) => {
+    if (quitting || !isAuctionRoom(webContents.getURL())) return;
+    event.preventDefault();
+    stayInAuction();
+  });
+  // Windows shutting down must not be held up by the window staying open
+  mainWindow.on('session-end', () => {
+    quitting = true;
+  });
   mainWindow.on('closed', () => {
     mainWindow = null;
-    keepScreenAwake(false);
+    lastPath = '';
+    updateScreenAwake();
+    removeTray();
   });
   openWhenServerReady(mainWindow, new URL(firstRoute, START_URL).href);
   firstRoute = '/';
@@ -238,13 +305,20 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.on('second-instance', (_event, argv) => {
     const link = linkInArgs(argv);
-    if (link) {
-      openLink(link);
-      return;
-    }
-    if (!mainWindow) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
+    if (link) openLink(link);
+    else showWindow();
+  });
+
+  app.on('before-quit', () => {
+    quitting = true;
+  });
+
+  // A notification from the site (being outbid). Only the site's own page may send one, and
+  // the main process decides whether it's shown.
+  ipcMain.on('desktop:notify', (event, title, body) => {
+    const fromSite = event.senderFrame === mainWindow?.webContents.mainFrame && isAppPage(event.senderFrame.url);
+    if (!fromSite || typeof title !== 'string' || typeof body !== 'string') return;
+    notifyIfAway(title.slice(0, 100), body.slice(0, 200));
   });
 
   // macOS hands invite links to the running app, even while it's still starting up
@@ -272,11 +346,16 @@ if (!app.requestSingleInstanceLock()) {
     // The installed app answers auctionarena:// links. A development copy doesn't register,
     // so it never takes links away from the installed app.
     if (app.isPackaged) app.setAsDefaultProtocolClient(PROTOCOL);
+    // Notifications on Windows belong to this id, which the installer gives the app too
+    if (process.platform === 'win32') app.setAppUserModelId('com.auctionarena.desktop');
     buildMenu({ goTo, goBack: () => goInHistory(-1), goForward: () => goInHistory(1), openInBrowser });
     createWindow();
-    // macOS keeps the app running with no windows; clicking the Dock icon opens one again
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    // Clicking the Dock icon on macOS brings back a hidden window, or opens a new one
+    app.on('activate', showWindow);
+    // Linux and macOS shutting down must not be held up by the window staying open
+    powerMonitor.on('shutdown', () => {
+      quitting = true;
+      app.quit();
     });
   });
 
