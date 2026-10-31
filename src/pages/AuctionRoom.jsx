@@ -193,7 +193,10 @@ const AuctionRoom = () => {
       previous?.playerId === serverLive.playerId && previous.leader === user?.uid &&
       serverLive.highBidderId && serverLive.highBidderId !== user?.uid && serverLive.status === 'bidding'
     ) {
-      toast({ message: `Outbid: ${serverLive.highBidderTeamId} went to ${formatPrice(serverLive.currentBid)}`, tone: 'error', duration: 2500 });
+      const message = `${serverLive.highBidderTeamId} went to ${formatPrice(serverLive.currentBid)}`;
+      toast({ message: `Outbid: ${message}`, tone: 'error', duration: 2500 });
+      // In the desktop app: a native notification too, for when the window isn't in front
+      window.auctionArenaDesktop?.notify?.(`Outbid on ${PLAYERS_BY_ID.get(serverLive.playerId)?.name ?? 'your player'}`, message);
     }
   }, [serverLive, user?.uid, toast]);
 

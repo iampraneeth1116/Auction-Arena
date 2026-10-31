@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- The icon's mark alone: macOS tints a black "Template" image to suit the menu bar -->
+  <path d="M6 58 L17 6 H29 L18 58 Z" fill="#000"/>
+  <path d="M27 58 L38 6 H49 L62 58 H50.5 L48 46 H39.5 L37 58 Z M41 37 H46.5 L43.8 23 Z" fill="#000"/>
+</svg>
