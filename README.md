@@ -191,6 +191,8 @@ Until the server answers `/api/health`, the app shows its own loading screen ins
 
 **During an auction:** sound needs no click first (countdown beeps, anthems and the voice auctioneer work as soon as a room opens, even right after a reload), the screen stays awake while an auction room is open and may sleep again once you leave it, and the page keeps full-speed timers behind other windows. On Linux the app turns on speech-dispatcher for the voice auctioneer (most desktops have it installed).
 
+**While you're away:** when the window isn't in front, a native notification says the auction has started, that you've been outbid, or that it has ended; clicking one brings the window back. If macOS refuses to show it, the Dock icon bounces instead. Closing the window during a live auction doesn't leave the room: the window hides, a tray icon appears, and you can still hear the room and be notified. Use the tray icon to come back or to leave and quit. On Linux the window minimises instead, because not every desktop shows tray icons. Anywhere else, closing simply closes.
+
 **Invite links:** `auctionarena://lobby/AB12CD` opens that lobby in the app (also `auction/` and `summary/`, and `?watch=1` to watch), whether the app is closed, open, or open with no window. Any other `auctionarena://` link is ignored, so a link from a website can only land on one of those pages. In a desktop browser, the signed-out invite card offers "Have the desktop app? Open this room in it". Only the installed app registers for these links (a development copy doesn't, so it never takes them over); try one in development with `npm start -- auctionarena://lobby/AB12CD`.
 
 ## 📂 Project Structure
