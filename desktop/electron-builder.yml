@@ -1,0 +1,51 @@
+# Installers for macOS, Windows and Linux: npm run dist
+appId: com.auctionarena.desktop # Windows notifications use this id too (see main.js)
+productName: Auction Arena
+artifactName: Auction-Arena-${version}-${os}-${arch}.${ext}
+directories:
+  output: dist
+files:
+  - src/**
+  - assets/**
+  - package.json
+protocols:
+  - name: Auction Arena invite link
+    schemes: [auctionarena]
+
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  icon: assets/icon.png
+  category: public.app-category.games
+  # Ad-hoc signed: free, and enough to run on Apple Silicon. With no Apple Developer
+  # account the first launch needs System Settings > Privacy & Security > Open Anyway.
+  identity: '-'
+  hardenedRuntime: false
+  gatekeeperAssess: false
+
+win:
+  target: [nsis]
+  icon: assets/icon.png
+nsis:
+  oneClick: true
+  perMachine: false
+
+linux:
+  target: [AppImage, deb]
+  icon: assets/icon.png
+  category: Game
+  synopsis: Live IPL auctions with friends
+  maintainer: Praneeth <iampraneeth1116@gmail.com>
+deb:
+  # The voice auctioneer speaks through it on Linux
+  recommends: [speech-dispatcher]
+
+# Locks the installed app down: it can't be run as plain Node.js, ignores NODE_OPTIONS and
+# debugger flags, and only loads its own packaged code (checked against tampering)
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  onlyLoadAppFromAsar: true
+  enableEmbeddedAsarIntegrityValidation: true
