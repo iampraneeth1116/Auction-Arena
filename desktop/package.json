@@ -4,13 +4,18 @@
   "version": "0.1.0",
   "private": true,
   "description": "The Auction Arena desktop app: the live site in its own window",
+  "author": "Praneeth <iampraneeth1116@gmail.com>",
+  "homepage": "https://auction-arena-g1ot.onrender.com",
   "type": "module",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "local": "electron . --url=http://localhost:5173"
+    "local": "electron . --url=http://localhost:5173",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac"
   },
   "devDependencies": {
-    "electron": "^44.9.3"
+    "electron": "^44.9.3",
+    "electron-builder": "^26.18.0"
   }
 }
