@@ -10,9 +10,11 @@ const PRODUCTION_URL = 'https://auction-arena-g1ot.onrender.com';
 const ICON_PATH = path.join(import.meta.dirname, '../assets/icon.png');
 const LOADING_PAGE = path.join(import.meta.dirname, 'loading.html');
 
-// `--url=http://localhost:5173` (or AUCTION_ARENA_URL) points the app at a local server,
-// to try a change before it's deployed. Anything else must be https.
+// While developing, `--url=http://localhost:5173` (or AUCTION_ARENA_URL) points the app at a
+// local server, to try a change before it's deployed. Anything else must be https. The
+// installed app ignores both: nobody can start it pointed at another site.
 function startUrl() {
+  if (app.isPackaged) return new URL(PRODUCTION_URL);
   const asked = process.argv.find(arg => arg.startsWith('--url='))?.slice('--url='.length)
     || process.env.AUCTION_ARENA_URL;
   if (!asked) return new URL(PRODUCTION_URL);

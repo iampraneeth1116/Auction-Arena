@@ -195,6 +195,23 @@ Until the server answers `/api/health`, the app shows its own loading screen ins
 
 **Invite links:** `auctionarena://lobby/AB12CD` opens that lobby in the app (also `auction/` and `summary/`, and `?watch=1` to watch), whether the app is closed, open, or open with no window. Any other `auctionarena://` link is ignored, so a link from a website can only land on one of those pages. In a desktop browser, the signed-out invite card offers "Have the desktop app? Open this room in it". Only the installed app registers for these links (a development copy doesn't, so it never takes them over); try one in development with `npm start -- auctionarena://lobby/AB12CD`.
 
+### Installers
+
+```bash
+cd desktop
+npm run dist:mac     # Auction-Arena-<version>-mac-arm64.dmg and -mac-x64.dmg
+npm run dist         # the installers for the system you're on
+npx electron-builder --win    # Windows .exe, also buildable from a Mac
+npx electron-builder --linux  # Linux .AppImage and .deb, also buildable from a Mac
+```
+
+They land in `desktop/dist/` (settings in `desktop/electron-builder.yml`). The installed app always opens the live site and ignores `--url`; it's locked with Electron fuses (no running as plain Node.js, no `NODE_OPTIONS` or debugger flags, and only its own checked app code loads).
+
+- **macOS:** ad-hoc signed, which is free and enough to run on Apple Silicon, but not notarised by Apple. After downloading, the first launch is blocked once: open **System Settings → Privacy & Security** and click **Open Anyway**.
+- **Windows:** unsigned, so SmartScreen shows "Windows protected your PC" the first time: click **More info → Run anyway**.
+- **Linux:** the `.deb` adds an Auction Arena launcher, opens `auctionarena://` links and recommends `speech-dispatcher` for the voice. The `.AppImage` runs without installing, but links only open in it if your desktop integrates AppImages.
+- **Building on a Mac inside iCloud Drive** (an iCloud-synced Desktop or Documents folder): iCloud tags the files and Apple's `codesign` then refuses them ("resource fork, Finder information, or similar detritus not allowed"). Build into a folder iCloud doesn't sync: `npm run dist:mac -- --config.directories.output="$HOME/Library/Caches/auction-arena-desktop-build"`.
+
 ## 📂 Project Structure
 
 ```
