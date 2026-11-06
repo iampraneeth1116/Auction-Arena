@@ -2,7 +2,7 @@
 // get a File menu instead. Edit is needed for copy and paste to work in the chat.
 import { app, Menu } from 'electron';
 
-export function buildMenu({ goTo, goBack, goForward, openInBrowser }) {
+export function buildMenu({ goTo, goBack, goForward, openInBrowser, checkForUpdates }) {
   const isMac = process.platform === 'darwin';
   const template = [
     ...(isMac ? [{ role: 'appMenu' }] : [{ label: 'File', submenu: [{ role: 'quit' }] }]),
@@ -37,6 +37,7 @@ export function buildMenu({ goTo, goBack, goForward, openInBrowser }) {
         { label: 'Privacy Policy', click: () => goTo('/privacy') },
         { type: 'separator' },
         { label: 'Open in Your Browser', click: openInBrowser },
+        { label: 'Check for Updates…', click: checkForUpdates },
       ],
     },
   ];
