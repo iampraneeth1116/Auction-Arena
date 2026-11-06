@@ -11,6 +11,13 @@ files:
 protocols:
   - name: Auction Arena invite link
     schemes: [auctionarena]
+# Installers go on Auction-Arena's Releases page (tag v<version>), where the app looks for
+# updates. Uploads land in a draft that the release workflow publishes once every system built.
+publish:
+  provider: github
+  owner: iampraneeth1116
+  repo: Auction-Arena
+  releaseType: draft
 
 mac:
   target:
