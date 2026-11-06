@@ -1,0 +1,68 @@
+name: Desktop release
+
+# Releases the desktop app. Set "version" in desktop/package.json, commit, then tag it:
+#   git tag v0.2.0 && git push origin v0.2.0
+# GitHub builds the installers on macOS, Windows and Linux and publishes them on this repo's
+# Releases page, where people download the app and the installed app finds updates.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  draft:
+    # Only the public Auction-Arena repo publishes installers
+    if: github.repository == 'iampraneeth1116/Auction-Arena'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check the tag matches the app's version
+        run: |
+          version="$(node -p "require('./desktop/package.json').version")"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match desktop/package.json version $version"
+            exit 1
+          fi
+      - name: Start a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --draft --title "Auction Arena $GITHUB_REF_NAME" --notes "The Auction Arena desktop app for macOS (Apple Silicon and Intel), Windows and Linux.
+
+          First launch: on macOS, open System Settings > Privacy & Security and click Open Anyway. On Windows, click More info > Run anyway."
+
+  build:
+    needs: draft
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: '.node-version'
+          cache: 'npm'
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+      - name: Build and upload the installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # The free route: ad-hoc signed on macOS, unsigned on Windows
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npx electron-builder --publish always
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest

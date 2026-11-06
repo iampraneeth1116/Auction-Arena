@@ -5,6 +5,7 @@ import { app, BrowserWindow, ipcMain, net, powerMonitor, powerSaveBlocker, sessi
 import { notify, removeTray, showTray } from './background.js';
 import { PROTOCOL, linkInArgs, routeFromLink } from './links.js';
 import { buildMenu } from './menu.js';
+import { checkForUpdatesNow, startUpdateChecks } from './updates.js';
 
 const PRODUCTION_URL = 'https://auction-arena-g1ot.onrender.com';
 const ICON_PATH = path.join(import.meta.dirname, '../assets/icon.png');
@@ -350,8 +351,9 @@ if (!app.requestSingleInstanceLock()) {
     if (app.isPackaged) app.setAsDefaultProtocolClient(PROTOCOL);
     // Notifications on Windows belong to this id, which the installer gives the app too
     if (process.platform === 'win32') app.setAppUserModelId('com.auctionarena.desktop');
-    buildMenu({ goTo, goBack: () => goInHistory(-1), goForward: () => goInHistory(1), openInBrowser });
+    buildMenu({ goTo, goBack: () => goInHistory(-1), goForward: () => goInHistory(1), openInBrowser, checkForUpdates: checkForUpdatesNow });
     createWindow();
+    startUpdateChecks();
     // Clicking the Dock icon on macOS brings back a hidden window, or opens a new one
     app.on('activate', showWindow);
     // Linux and macOS shutting down must not be held up by the window staying open
