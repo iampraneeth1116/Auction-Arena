@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion';
 import {
   Bot, BotOff, Check, Copy, Crown, Eye, EyeOff, Gavel, Globe, Hourglass, House, Loader2, Lock, MessageCircle, MessageSquare, Plane, RotateCw,
-  SearchX, Share2, ShieldX, Timer, TrendingUp, UserMinus, UserPlus, UserRound, Users, Wallet,
+  Scale, SearchX, Share2, ShieldX, Timer, TrendingUp, UserMinus, UserPlus, UserRound, Users, Wallet,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useAuction } from '../hooks/useAuction';
@@ -272,9 +272,10 @@ const WaitingPanel = ({ isHost, hostName, myTeam }) => (
 );
 
 const HostControls = ({
-  room, busy, managedCount, openCount, botCount, canStart, onStart, onFillBots, onClearBots, onTimer, onListed, onQuickPool, onRotate, onHideUpcoming, onOverseas,
+  room, busy, managedCount, openCount, botCount, canStart, onStart, onFillBots, onClearBots, onTimer, onListed, onQuickPool, onPlayerMix, onRotate, onHideUpcoming, onOverseas,
 }) => {
   const bidTimer = room.settings?.bidTimer;
+  const shorterPool = Boolean(room.quickPool || MODE_META[room.auctionType]?.pool);
   return (
     <Panel label="Host controls" accent="signal" className="order-2" bodyClassName="divide-y divide-white/6">
       <div className="space-y-2 p-4">
@@ -350,6 +351,16 @@ const HostControls = ({
           label="Quick pool"
           description={`Players auctioned = ${managedCount} franchise${managedCount === 1 ? '' : 's'} × ${room.squadLimit} squad slots + 10 spares = ${auctionPoolSize({ auctionType: room.auctionType, quickPool: true, franchises: managedCount, squadLimit: room.squadLimit })}, instead of ${auctionPoolSize({ auctionType: room.auctionType, quickPool: false })}. Counted when you press Start.`}
         />
+        {shorterPool && (
+          <Toggle
+            className="mt-4"
+            checked={room.playerMix === 'balanced'}
+            onChange={(on) => onPlayerMix(on ? 'balanced' : 'stars')}
+            disabled={Boolean(busy)}
+            label="Balanced player mix"
+            description="An equal share of Elite, Star, Solid, Squad and Prospect players, instead of mostly the top-rated. Applies whenever fewer than the full list go under the hammer."
+          />
+        )}
         <Toggle
           className="mt-4"
           checked={room.rotateUnsold !== false}
@@ -450,6 +461,12 @@ const MembersPanel = ({ players, uid, isHost, spectatorCount, onKick }) => {
   );
 };
 
+// Which players go under the hammer: the full list, or a shorter pool and how it's drawn
+const playerMixText = (room) => {
+  if (!room.quickPool && !MODE_META[room.auctionType]?.pool) return 'The full player list';
+  return room.playerMix === 'balanced' ? 'Balanced: every rating tier equally' : 'Drawn from the top-rated players';
+};
+
 const RulesPanel = ({ room }) => {
   const rules = [
     { icon: Users, label: 'Squad', text: `Up to ${room.squadLimit} players` },
@@ -459,6 +476,7 @@ const RulesPanel = ({ room }) => {
     { icon: Timer, label: 'Clock', text: `Resets to ${room.settings?.bidTimer}s on every bid` },
     { icon: Users, label: 'Unsold', text: room.rotateUnsold === false ? 'Out once unsold' : 'Come back in later rounds' },
     { icon: room.hideUpcoming ? EyeOff : Eye, label: 'Up next', text: room.hideUpcoming ? 'Hidden: every lot is a surprise' : 'Shown, so you can plan your purse' },
+    { icon: Scale, label: 'Players', text: playerMixText(room) },
   ];
   return (
     <Panel label="Rules" className="order-5" bodyClassName="grid grid-cols-1 gap-2 p-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -614,6 +632,10 @@ const Lobby = () => {
   const setQuickPool = (quickPool) =>
     run('quickPool', () => updateRoomSettings(roomCode, { quickPool }), () => {
       toast({ message: quickPool ? 'Quick pool on: a shorter auction' : 'Quick pool off: the full pool for this mode', tone: 'success' });
+    });
+  const setPlayerMix = (playerMix) =>
+    run('playerMix', () => updateRoomSettings(roomCode, { playerMix }), () => {
+      toast({ message: playerMix === 'balanced' ? 'Balanced mix: every rating tier gets an equal share' : 'Player mix: drawn from the top-rated players', tone: 'success' });
     });
   const setHideUpcoming = (hideUpcoming) =>
     run('hideUpcoming', () => updateRoomSettings(roomCode, { hideUpcoming }), () => {
@@ -811,6 +833,7 @@ const Lobby = () => {
               onTimer={setBidTimer}
               onListed={setListed}
               onQuickPool={setQuickPool}
+              onPlayerMix={setPlayerMix}
               onRotate={setRotate}
               onHideUpcoming={setHideUpcoming}
               onOverseas={setOverseas}

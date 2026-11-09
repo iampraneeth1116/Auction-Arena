@@ -12,7 +12,7 @@ import { profileOf } from '../src/lib/playerProfile.js';
 import { nextBid } from '../src/lib/format.js';
 import { PLAYER_PROFILES } from '../src/data/playerProfiles.js';
 import { PLAYER_OUTLOOK } from '../src/data/playerOutlook.js';
-import { buildRatings } from '../src/lib/playerRating.js';
+import { buildRatings, ratingTier } from '../src/lib/playerRating.js';
 
 const PLAYERS = new Map(IPL_PLAYERS.map(p => [p.id, p]));
 const PORT = 3096;
@@ -188,6 +188,46 @@ try {
   check('the host can show them during the auction', (await host.emit('settings:update', { roomId: secret, hideUpcoming: false })).ok);
   check('then the whole order is sent', await eventually(host, () => host.state.id === secret && host.state.playerOrder.length === 80, 3000, 'order shown'));
   await host.emit('auction:end', { roomId: secret });
+
+  // Player mix: a shorter pool drawn from the top-rated players, or every rating tier equally
+  const TIERS = ['elite', 'star', 'solid', 'squad', 'prospect'];
+  const tierCounts = (order) => {
+    const counts = Object.fromEntries(TIERS.map(tier => [tier, 0]));
+    for (const index of order) counts[ratingTier(RATINGS.get(IPL_PLAYERS[index].id))]++;
+    return counts;
+  };
+  const evenly = (counts) => TIERS.every(tier => counts[tier] >= 3 && counts[tier] <= 5);
+  const twoTeams = { franchises: 2, squadLimit: 5, overseasLimit: 2 };
+  const topPool = tierCounts(buildPlayerOrder('sprint5', 20, twoTeams));
+  check('a top-players pool of 20 is all Elite and Star', topPool.elite + topPool.star === 20, JSON.stringify(topPool));
+  let evenDraws = 0;
+  let safeDraws = 0;
+  for (let draw = 0; draw < 25; draw++) {
+    const order = buildPlayerOrder('sprint5', 20, twoTeams, 'balanced');
+    if (evenly(tierCounts(order))) evenDraws++;
+    const indians = order.filter(index => !isOverseas(IPL_PLAYERS[index]));
+    // 2 squads of 5 with 2 overseas each: 6 Indian places plus half the 4 overseas ones
+    if (indians.length >= 8 && indians.filter(index => IPL_PLAYERS[index].role === 'Wicket-Keeper').length >= 2) safeDraws++;
+  }
+  check('a balanced pool of 20 has 3 to 5 players from every rating tier', evenDraws === 25, `${evenDraws}/25 draws`);
+  check('a balanced pool still has enough Indians and an Indian keeper per franchise', safeDraws === 25, `${safeDraws}/25 draws`);
+  check('the player mix only changes a shorter pool', buildPlayerOrder('mega', undefined, {}, 'balanced').length === IPL_PLAYERS.length);
+
+  check('rooms draw from the top-rated players by default', (await host.join(plainMega)).state.playerMix === 'stars');
+  check('an unknown player mix is refused', (await host.req('POST', '/api/rooms', { teamId: 'GT', auctionType: 'sprint5', playerMix: 'random' })).status === 400);
+  const mixed = (await host.req('POST', '/api/rooms', { teamId: 'GT', auctionType: 'sprint5', quickPool: true, playerMix: 'balanced' })).data.id;
+  check('a room can use a balanced player mix', (await host.join(mixed)).state.playerMix === 'balanced');
+  check('only the host changes the player mix', /Only the host/.test((await friend.emit('settings:update', { roomId: mixed, playerMix: 'stars' })).error || ''));
+  check('the player mix must be a known one', /Invalid player mix/.test((await host.emit('settings:update', { roomId: mixed, playerMix: 'random' })).error || ''));
+  check('the player mix can be switched before the start', (await host.emit('settings:update', { roomId: mixed, playerMix: 'stars' })).ok
+    && (await host.emit('settings:update', { roomId: mixed, playerMix: 'balanced' })).ok);
+  await host.emit('bots:add', { roomId: mixed, teamId: 'MI' });
+  await host.emit('auction:start', { roomId: mixed });
+  await host.waitFor(() => host.state.id === mixed && host.state.status === 'active', 3000, 'balanced room active');
+  const mixedCounts = tierCounts(host.state.playerOrder);
+  check('a balanced quick pool for 2 franchises spreads its 20 players across the tiers', host.state.playerOrder.length === 20 && evenly(mixedCounts), JSON.stringify(mixedCounts));
+  check('the player mix is fixed once the auction starts', /fixed/.test((await host.emit('settings:update', { roomId: mixed, playerMix: 'stars' })).error || ''));
+  await host.emit('auction:end', { roomId: mixed });
   friend.disconnect();
   host.disconnect();
 

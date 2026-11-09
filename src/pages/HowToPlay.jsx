@@ -507,8 +507,9 @@ const Modes = () => (
       </Note>
       <Note icon={Layers} title="Shorter pools" tone="volt">
         Classic 11, Sprint 5 and Blitz 5 draw a fresh pool for each room at random from the top-rated players (a group half as
-        big again as the pool), keeping the mix of roles, so every room gets a different set of stars. Every franchise gets an
-        Indian keeper to go after, and there are enough Indians to fill every squad.
+        big again as the pool), keeping the mix of roles, so every room gets a different set of stars. With Balanced player
+        mix on, the pool is shared equally between the five rating tiers instead, so it isn&rsquo;t nearly all stars. Either
+        way, every franchise gets an Indian keeper to go after, and there are enough Indians to fill every squad.
       </Note>
       <Note icon={Users} title="Ten franchises" tone="gold">
         Every room has all ten IPL franchises, each starting with the full purse. Franchises nobody takes can go to bots
@@ -520,7 +521,8 @@ const Modes = () => (
       For a shorter auction the host can turn on Quick pool, on the Host screen or in the lobby. Then only one
       squad&rsquo;s worth of players per franchise taking part goes under the hammer, plus 10 spares: four franchises in
       Classic 11 means 4 × 11 + 10 = 54 players, ten franchises in Mega means 260 instead of {FULL_LIST}. The count is
-      made when the host presses Start, and the players are drawn from the top in the same way.
+      made when the host presses Start, and the players are drawn in the same way: from the top, or every tier equally with
+      Balanced player mix.
     </Note>
   </Section>
 );

@@ -11,6 +11,7 @@ import {
   MAX_BID_TIMER,
   MIN_BID_TIMER,
   PLAYERS_BY_ID,
+  PLAYER_MIXES,
   SOLD_CARD_MS,
   TEAMS_BY_ID,
   UNSOLD_CARD_MS,
@@ -61,6 +62,7 @@ function toRuntime(row) {
       quickPool: row.quickPool,
       rotateUnsold: row.rotateUnsold,
       hideUpcoming: row.hideUpcoming,
+      playerMix: row.playerMix,
       round: row.round,
       roundStart: row.roundStart,
       createdAt: row.createdAt,
@@ -153,6 +155,7 @@ export function getSnapshot(rt) {
     quickPool: room.quickPool,
     rotateUnsold: room.rotateUnsold,
     hideUpcoming: room.hideUpcoming,
+    playerMix: room.playerMix,
     round: room.round,
     spectatorCount: countSpectators(rt),
     players: members.map(m => ({
@@ -551,7 +554,7 @@ function checkOverseasLimit(limit, squadLimit) {
 
 // The host creates the room and claims a franchise in one step. bidTimer and
 // overseasLimit are optional: without them the mode's own values apply.
-export async function createRoom({ user, teamId, auctionType, isPublic = false, quickPool = false, rotateUnsold = true, hideUpcoming = false, bidTimer, overseasLimit }) {
+export async function createRoom({ user, teamId, auctionType, isPublic = false, quickPool = false, rotateUnsold = true, hideUpcoming = false, playerMix = 'stars', bidTimer, overseasLimit }) {
   const mode = AUCTION_MODES[auctionType];
   if (!mode) throw new HttpError(400, 'Unknown auction mode');
   if (!TEAMS_BY_ID.has(teamId)) throw new HttpError(400, 'Unknown franchise');
@@ -573,6 +576,7 @@ export async function createRoom({ user, teamId, auctionType, isPublic = false, 
           quickPool,
           rotateUnsold,
           hideUpcoming,
+          playerMix,
           playerOrder: [],
           members: {
             create: { userId: user.id, displayName: user.name, teamId, budgetRemaining: mode.budgetLakhs },
@@ -646,6 +650,7 @@ export function updateSettings(rt, userId, {
   quickPool = rt.room.quickPool,
   rotateUnsold = rt.room.rotateUnsold,
   hideUpcoming = rt.room.hideUpcoming,
+  playerMix = rt.room.playerMix,
   overseasLimit = rt.room.overseasLimit,
 }) {
   return exclusive(rt, async () => {
@@ -657,18 +662,19 @@ export function updateSettings(rt, userId, {
     if (typeof quickPool !== 'boolean') throw new HttpError(400, 'Invalid pool setting');
     if (typeof rotateUnsold !== 'boolean') throw new HttpError(400, 'Invalid unsold setting');
     if (typeof hideUpcoming !== 'boolean') throw new HttpError(400, 'Invalid upcoming-players setting');
+    if (!PLAYER_MIXES.includes(playerMix)) throw new HttpError(400, 'Invalid player mix');
     checkOverseasLimit(overseasLimit, rt.room.squadLimit);
     if (rt.room.status === 'completed') throw new HttpError(409, 'This auction has already ended.');
     // The pool is drawn when the auction starts, so it can't change afterwards
-    if (quickPool !== rt.room.quickPool && rt.room.status !== 'waiting') {
+    if ((quickPool !== rt.room.quickPool || playerMix !== rt.room.playerMix) && rt.room.status !== 'waiting') {
       throw new HttpError(409, 'The player pool is fixed once the auction starts');
     }
     // Squads may already be built around the limit, so it only changes before the start
     if (overseasLimit !== rt.room.overseasLimit && rt.room.status !== 'waiting') {
       throw new HttpError(409, 'The overseas limit is fixed once the auction starts');
     }
-    await prisma.room.update({ where: { id: rt.room.id }, data: { bidTimer, isPublic, quickPool, rotateUnsold, hideUpcoming, overseasLimit } });
-    Object.assign(rt.room, { bidTimer, isPublic, quickPool, rotateUnsold, hideUpcoming, overseasLimit });
+    await prisma.room.update({ where: { id: rt.room.id }, data: { bidTimer, isPublic, quickPool, rotateUnsold, hideUpcoming, playerMix, overseasLimit } });
+    Object.assign(rt.room, { bidTimer, isPublic, quickPool, rotateUnsold, hideUpcoming, playerMix, overseasLimit });
     broadcast(rt);
   });
 }
@@ -771,7 +777,7 @@ export function startAuction(rt, userId) {
       franchises: managed,
       squadLimit: rt.room.squadLimit,
       overseasLimit: rt.room.overseasLimit,
-    });
+    }, rt.room.playerMix);
     await prisma.room.update({
       where: { id: rt.room.id },
       data: { status: 'active', playerOrder, currentIndex: 0 },

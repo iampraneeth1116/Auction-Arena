@@ -456,6 +456,7 @@ const HostTab = () => {
   const [quickPool, setQuickPool] = useState(false);
   const [rotateUnsold, setRotateUnsold] = useState(true);
   const [hideUpcoming, setHideUpcoming] = useState(false);
+  const [balanced, setBalanced] = useState(false);
   // null until the host picks one: then each mode's own value applies
   const [timerChoice, setTimerChoice] = useState(null);
   const [overseasChoice, setOverseasChoice] = useState(null);
@@ -469,7 +470,7 @@ const HostTab = () => {
   const create = async () => {
     setBusy(true);
     try {
-      const id = await createRoom({ teamId, auctionType: mode, isPublic, quickPool, rotateUnsold, hideUpcoming, bidTimer, overseasLimit });
+      const id = await createRoom({ teamId, auctionType: mode, isPublic, quickPool, rotateUnsold, hideUpcoming, playerMix: balanced ? 'balanced' : 'stars', bidTimer, overseasLimit });
       navigate(`/lobby/${id}`);
     } catch (err) {
       toast({ message: err.message || 'Could not create the room. Please try again.', tone: 'error' });
@@ -544,6 +545,15 @@ const HostTab = () => {
           label="Quick pool"
           description={`Players auctioned = franchises playing × ${squadSize} squad slots + 10 spares. With all ten teams that's ${auctionPoolSize({ auctionType: mode, quickPool: true, franchises: 10, squadLimit: squadSize })}, instead of ${auctionPoolSize({ auctionType: mode, quickPool: false })}.`}
         />
+        {/* Only a pool shorter than the full list is drawn, so only then does the mix matter */}
+        {(quickPool || MODE_META[mode].pool) && (
+          <Toggle
+            checked={balanced}
+            onChange={setBalanced}
+            label="Balanced player mix"
+            description="An equal share of Elite, Star, Solid, Squad and Prospect players, instead of mostly the top-rated. Applies whenever fewer than the full list go under the hammer."
+          />
+        )}
         <Toggle
           checked={rotateUnsold}
           onChange={setRotateUnsold}

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../db.js';
 import { requireAuth } from '../auth/middleware.js';
 import { HttpError, parseBody } from '../validation.js';
-import { MAX_BID_TIMER, MIN_BID_TIMER, TEAMS_BY_ID, toCrores } from '../auctionRules.js';
+import { MAX_BID_TIMER, MIN_BID_TIMER, PLAYER_MIXES, TEAMS_BY_ID, toCrores } from '../auctionRules.js';
 import { createRoom, getRuntime, joinRoom, listPublicRooms, selectTeam } from '../realtime/roomManager.js';
 
 const router = Router();
@@ -17,6 +17,8 @@ const createSchema = z.object({
   rotateUnsold: z.boolean().optional(),
   // Keep who's coming next from everyone while the auction runs
   hideUpcoming: z.boolean().optional(),
+  // Which players a shorter pool is drawn from: the top-rated, or every rating tier equally
+  playerMix: z.enum(PLAYER_MIXES).optional(),
   // 0 to the squad size (= no limit); checked against the mode when the room is made
   overseasLimit: z.number().int().min(0).max(25).optional(),
   // Seconds per bid; without it the mode's own default applies
@@ -25,8 +27,8 @@ const createSchema = z.object({
 const joinSchema = z.object({ teamId: z.string().optional() });
 
 router.post('/rooms', requireAuth, async (req, res) => {
-  const { teamId, auctionType, isPublic, quickPool, rotateUnsold, hideUpcoming, bidTimer, overseasLimit } = parseBody(createSchema, req.body);
-  const id = await createRoom({ user: req.user, teamId, auctionType, isPublic, quickPool, rotateUnsold, hideUpcoming, bidTimer, overseasLimit });
+  const { teamId, auctionType, isPublic, quickPool, rotateUnsold, hideUpcoming, playerMix, bidTimer, overseasLimit } = parseBody(createSchema, req.body);
+  const id = await createRoom({ user: req.user, teamId, auctionType, isPublic, quickPool, rotateUnsold, hideUpcoming, playerMix, bidTimer, overseasLimit });
   res.status(201).json({ id });
 });
 
