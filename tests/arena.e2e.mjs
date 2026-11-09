@@ -12,6 +12,7 @@ import { profileOf } from '../src/lib/playerProfile.js';
 import { nextBid } from '../src/lib/format.js';
 import { PLAYER_PROFILES } from '../src/data/playerProfiles.js';
 import { PLAYER_OUTLOOK } from '../src/data/playerOutlook.js';
+import { IPL_MATCHES, iplMatchesOf } from '../src/data/iplMatches.js';
 import { buildRatings, ratingTier } from '../src/lib/playerRating.js';
 
 const PLAYERS = new Map(IPL_PLAYERS.map(p => [p.id, p]));
@@ -210,6 +211,15 @@ try {
     if (indians.length >= 8 && indians.filter(index => IPL_PLAYERS[index].role === 'Wicket-Keeper').length >= 2) safeDraws++;
   }
   check('a balanced pool of 20 has 3 to 5 players from every rating tier', evenDraws === 25, `${evenDraws}/25 draws`);
+  let experiencedDraws = 0;
+  for (let draw = 0; draw < 25; draw++) {
+    if (buildPlayerOrder('sprint5', undefined, {}, 'balanced').every(index => iplMatchesOf(IPL_PLAYERS[index].id) >= 7)) experiencedDraws++;
+  }
+  check('every player in a balanced pool has played at least 7 IPL matches', experiencedDraws === 25, `${experiencedDraws}/25 draws`);
+  const ids = new Set(IPL_PLAYERS.map(p => p.id));
+  check('IPL match counts are whole numbers for real players', Object.entries(IPL_MATCHES).every(([id, n]) => ids.has(id) && Number.isInteger(n) && n > 0));
+  check('IPL match counts look right', iplMatchesOf('virat-kohli') > 250 && iplMatchesOf('jasprit-bumrah') > 120 && iplMatchesOf('no-such-player') === 0);
+  check('a balanced Mega quick pool for 10 teams still fills to 260', buildPlayerOrder('mega', 260, { franchises: 10, squadLimit: 25, overseasLimit: 8 }, 'balanced').length === 260);
   check('a balanced pool still has enough Indians and an Indian keeper per franchise', safeDraws === 25, `${safeDraws}/25 draws`);
   check('the player mix only changes a shorter pool', buildPlayerOrder('mega', undefined, {}, 'balanced').length === IPL_PLAYERS.length);
 

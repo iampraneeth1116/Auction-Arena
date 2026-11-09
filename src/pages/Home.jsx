@@ -551,7 +551,7 @@ const HostTab = () => {
             checked={balanced}
             onChange={setBalanced}
             label="Balanced player mix"
-            description="An equal share of Elite, Star, Solid, Squad and Prospect players, instead of mostly the top-rated. Applies whenever fewer than the full list go under the hammer."
+            description="An equal share of Elite, Star, Solid, Squad and Prospect players, each with at least 7 IPL matches, instead of mostly the top-rated. Applies whenever fewer than the full list go under the hammer."
           />
         )}
         <Toggle

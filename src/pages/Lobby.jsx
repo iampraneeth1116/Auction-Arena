@@ -358,7 +358,7 @@ const HostControls = ({
             onChange={(on) => onPlayerMix(on ? 'balanced' : 'stars')}
             disabled={Boolean(busy)}
             label="Balanced player mix"
-            description="An equal share of Elite, Star, Solid, Squad and Prospect players, instead of mostly the top-rated. Applies whenever fewer than the full list go under the hammer."
+            description="An equal share of Elite, Star, Solid, Squad and Prospect players, each with at least 7 IPL matches, instead of mostly the top-rated. Applies whenever fewer than the full list go under the hammer."
           />
         )}
         <Toggle
@@ -464,7 +464,7 @@ const MembersPanel = ({ players, uid, isHost, spectatorCount, onKick }) => {
 // Which players go under the hammer: the full list, or a shorter pool and how it's drawn
 const playerMixText = (room) => {
   if (!room.quickPool && !MODE_META[room.auctionType]?.pool) return 'The full player list';
-  return room.playerMix === 'balanced' ? 'Balanced: every rating tier equally' : 'Drawn from the top-rated players';
+  return room.playerMix === 'balanced' ? 'Balanced: every rating tier equally, 7+ IPL matches each' : 'Drawn from the top-rated players';
 };
 
 const RulesPanel = ({ room }) => {

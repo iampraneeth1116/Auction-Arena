@@ -1,5 +1,6 @@
 import { IPL_PLAYERS } from '../src/data/players.js';
 import { TEAMS } from '../src/data/teams.js';
+import { MIN_IPL_MATCHES, iplMatchesOf } from '../src/data/iplMatches.js';
 import { buildRatings, ratingTier } from '../src/lib/playerRating.js';
 
 // Money is whole lakhs on the server (1 Cr = 100 L) so repeated increments never
@@ -108,9 +109,9 @@ function pickByRole(candidates, places, chosen) {
 
 // Swaps the weakest picks that canGo (marquee players last) for the best players
 // left out who are wanted, keeping roles level where it can, until at least min
-// are in the pool. keepRating: each swap takes the wanted player rated closest to
-// the one going instead, so a balanced pool stays balanced.
-function ensureAtLeast(chosen, min, wanted, canGo, keepRating = false) {
+// are in the pool. balanced: each swap takes the wanted player rated closest to the
+// one going instead, preferring players with IPL experience, so the pool stays balanced.
+function ensureAtLeast(chosen, min, wanted, canGo, balanced = false) {
   let have = [...chosen].filter(index => wanted(IPL_PLAYERS[index])).length;
   if (have >= min) return;
   const scored = (index) => ({ index, score: RATINGS.get(IPL_PLAYERS[index].id) + Math.random() * 25 });
@@ -127,7 +128,11 @@ function ensureAtLeast(chosen, min, wanted, canGo, keepRating = false) {
   const ratingOf = (index) => RATINGS.get(IPL_PLAYERS[index].id);
   for (const { index: out } of removable) {
     if (have >= min || available.length === 0) break;
-    if (keepRating) available.sort((a, b) => Math.abs(ratingOf(a.index) - ratingOf(out)) - Math.abs(ratingOf(b.index) - ratingOf(out)));
+    if (balanced) {
+      const unproven = (index) => (experienced(IPL_PLAYERS[index]) ? 0 : 1);
+      available.sort((a, b) => unproven(a.index) - unproven(b.index)
+        || Math.abs(ratingOf(a.index) - ratingOf(out)) - Math.abs(ratingOf(b.index) - ratingOf(out)));
+    }
     const sameRole = available.findIndex(({ index }) => IPL_PLAYERS[index].role === IPL_PLAYERS[out].role);
     const [{ index: replacement }] = available.splice(Math.max(0, sameRole), 1);
     chosen.delete(out);
@@ -143,12 +148,18 @@ const TOP_GROUP = 1.5;
 // "balanced", an equal share from every rating tier
 export const PLAYER_MIXES = ['stars', 'balanced'];
 
+// Only players who've played at least MIN_IPL_MATCHES IPL matches go into a balanced pool
+const experienced = (player) => iplMatchesOf(player.id) >= MIN_IPL_MATCHES;
+
 // Balanced: the places are shared equally between the rating tiers (Elite, Star, Solid,
-// Squad player, Prospect), each tier's share drawn at random in its own mix of roles.
-// Smaller tiers go first, so a tier with too few players hands its spare places on.
+// Squad player, Prospect), each tier's share drawn at random in its own mix of roles, from
+// players with IPL experience. Smaller tiers go first, so a tier with too few players hands
+// its spare places on. A pool bigger than every experienced player put together (Mega's
+// quick pool with all ten teams) is topped up with the most experienced of the rest.
 function pickBalanced(poolSize, chosen) {
   const tiers = new Map();
   IPL_PLAYERS.forEach((player, index) => {
+    if (!experienced(player)) return;
     const tier = ratingTier(RATINGS.get(player.id));
     if (!tiers.has(tier)) tiers.set(tier, []);
     tiers.get(tier).push(index);
@@ -160,6 +171,14 @@ function pickBalanced(poolSize, chosen) {
     pickByRole(indices, share, chosen);
     placesLeft -= share;
   });
+  const mostExperienced = IPL_PLAYERS
+    .map((player, index) => index)
+    .filter(index => !chosen.has(index))
+    .sort((a, b) => iplMatchesOf(IPL_PLAYERS[b].id) - iplMatchesOf(IPL_PLAYERS[a].id));
+  for (const index of mostExperienced) {
+    if (chosen.size >= poolSize) break;
+    chosen.add(index);
+  }
 }
 
 // A shorter pool is drawn at random from the top-rated players, a group half as

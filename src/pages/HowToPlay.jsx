@@ -508,7 +508,8 @@ const Modes = () => (
       <Note icon={Layers} title="Shorter pools" tone="volt">
         Classic 11, Sprint 5 and Blitz 5 draw a fresh pool for each room at random from the top-rated players (a group half as
         big again as the pool), keeping the mix of roles, so every room gets a different set of stars. With Balanced player
-        mix on, the pool is shared equally between the five rating tiers instead, so it isn&rsquo;t nearly all stars. Either
+        mix on, the pool is shared equally between the five rating tiers instead, so it isn&rsquo;t nearly all stars, and
+        only players with at least 7 IPL matches are drawn. Either
         way, every franchise gets an Indian keeper to go after, and there are enough Indians to fill every squad.
       </Note>
       <Note icon={Users} title="Ten franchises" tone="gold">
