@@ -10,6 +10,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { useRoomSounds } from '../hooks/useRoomSounds';
 import { useAuctioneer } from '../hooks/useAuctioneer';
+import { useConnectionStatus } from '../hooks/useConnectionStatus';
 import { IPL_PLAYERS } from '../data/players';
 import { PLAYERS_BY_ID } from '../lib/catalog';
 import { MODE_META, formatPrice, isOverseas, maxBidFor, nextBid } from '../lib/format';
@@ -25,6 +26,7 @@ import Ticker, { TickerItem } from '../components/ui/Ticker';
 import TeamCrest from '../components/ui/TeamCrest';
 import { buttonClasses } from '../components/ui/styles';
 import RoomChat from '../components/RoomChat';
+import ConnectionBanner from '../components/ConnectionBanner';
 import LotCard from '../components/auction/LotCard';
 import PriceBoard from '../components/auction/PriceBoard';
 import BidConsole from '../components/auction/BidConsole';
@@ -76,6 +78,9 @@ const AuctionRoom = () => {
     joinAuction, joinRoom, placeBid, pauseAuction, resumeAuction, endAuction, updateRoomSettings, kickPlayer, getSyncedTime,
   } = useAuction();
   const spectating = wantsToWatch && !team;
+  // While the link is down the screen shows the last state it heard: no bids until it's back
+  const connection = useConnectionStatus();
+  const online = connection === 'connected';
   useDocumentTitle(`${spectating ? 'Watching' : 'Live'} ${id}`);
 
   const [optimistic, setOptimistic] = useState(null);
@@ -94,7 +99,7 @@ const AuctionRoom = () => {
 
   // Show our own bid at once, until the server's state catches up, moves on or stops bidding
   const serverLive = currentAuction?.currentAuction ?? null;
-  const optimisticPending = Boolean(optimistic) &&
+  const optimisticPending = online && Boolean(optimistic) &&
     serverLive?.playerId === optimistic.playerId &&
     serverLive?.status === 'bidding' &&
     (serverLive?.currentBid || 0) < optimistic.currentBid;
@@ -140,6 +145,7 @@ const AuctionRoom = () => {
   const maxBid = maxBidFor(team, squadLimit);
   let bidState = 'open';
   if (!team) bidState = 'spectating';
+  else if (!online) bidState = connection === 'signed-out' ? 'signed-out' : 'offline';
   else if (!live || live.status === 'paused') bidState = 'paused';
   else if (live.status !== 'bidding' || secondsLeft === 0) bidState = 'closed';
   else if (live.highBidderId === user?.uid) bidState = 'leading';
@@ -159,7 +165,9 @@ const AuctionRoom = () => {
       timerEndsAt: getSyncedTime() + bidTimer * 1000,
     });
     try {
-      await placeBid(nextAmount);
+      await placeBid(nextAmount, live.playerId);
+      // The new state reached us before this reply did
+      setOptimistic(null);
     } catch (err) {
       setOptimistic(null);
       sounds.beep(220, 0.25);
@@ -313,6 +321,7 @@ const AuctionRoom = () => {
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-grid">
+      <ConnectionBanner />
       {/* Top bar */}
       <header className="flex h-14 shrink-0 items-center gap-1.5 border-b border-white/6 bg-ink-950/90 px-2 backdrop-blur sm:px-4">
         <Link to="/" aria-label="Auction Arena home" className="flex items-center">

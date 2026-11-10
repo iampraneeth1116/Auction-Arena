@@ -79,7 +79,7 @@ export function createSocketServer(httpServer) {
     handle('auction:pause', async ({ roomId }) => rooms.pauseAuction(await loadRoom(roomId), user.id));
     handle('auction:resume', async ({ roomId }) => rooms.resumeAuction(await loadRoom(roomId), user.id));
     handle('auction:end', async ({ roomId }) => rooms.endAuction(await loadRoom(roomId), user.id));
-    handle('bid:place', async ({ roomId, amount }) => rooms.placeBid(await loadRoom(roomId), user.id, amount));
+    handle('bid:place', async ({ roomId, amount, playerId }) => rooms.placeBid(await loadRoom(roomId), user.id, amount, playerId));
     handle('chat:send', async ({ roomId, text, type }) => rooms.sendChat(await loadRoom(roomId), user.id, { text, type }));
     handle('lineup:save', async ({ roomId, playerIds }) => rooms.saveBattingOrder(await loadRoom(roomId), user.id, playerIds));
 

@@ -61,6 +61,8 @@ export function nextBid(currentBid, basePrice) {
 export function bidButtonLabel(state, nextAmount) {
   return {
     leading: 'You lead',
+    offline: 'Reconnecting…',
+    'signed-out': 'Sign in to bid',
     closed: 'Bidding closed',
     paused: 'Paused',
     full: 'Squad full',

@@ -25,6 +25,7 @@ import Tag from '../components/ui/Tag';
 import TeamCrest from '../components/ui/TeamCrest';
 import { buttonClasses } from '../components/ui/styles';
 import RoomChat from '../components/RoomChat';
+import ConnectionBanner from '../components/ConnectionBanner';
 import SignInOptions from '../components/SignInOptions';
 
 const TEAM_COUNT = TEAMS.length;
@@ -747,6 +748,7 @@ const Lobby = () => {
 
   return (
     <PageShell wide className="pb-28 pt-4 sm:pt-6 lg:pb-12">
+      <ConnectionBanner />
       {spectatorView && (
         <div className="mb-4 flex flex-col gap-3 rounded-lg border border-signal/30 bg-signal/[0.07] p-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
           <div className="flex items-start gap-3 sm:items-center">

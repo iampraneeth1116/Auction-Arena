@@ -146,10 +146,11 @@ export const AuctionProvider = ({ children }) => {
     []
   );
 
-  // amount is the price shown on the bid button; the server rejects it if the price has moved
-  const placeBid = useCallback(async (amount) => {
+  // amount is the price shown on the bid button and playerId the player on screen; the server
+  // rejects the bid if either has moved on. A bid that can't get through fast is dropped, not sent late.
+  const placeBid = useCallback(async (amount, playerId) => {
     if (!currentAuction) throw new Error('Auction not found!');
-    await emitWithAck('bid:place', { roomId: currentAuction.id, amount });
+    await emitWithAck('bid:place', { roomId: currentAuction.id, amount, playerId }, { timeoutMs: 5000 });
   }, [currentAuction]);
 
   const pauseAuction = useCallback(

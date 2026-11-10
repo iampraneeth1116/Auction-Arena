@@ -789,8 +789,9 @@ export function startAuction(rt, userId) {
   });
 }
 
-// expectedAmount is the price (in crores) the bidder saw on their button
-export function placeBid(rt, userId, expectedAmount) {
+// expectedAmount is the price (in crores) the bidder saw on their button, expectedPlayerId the
+// player they saw. A bid delayed by a bad connection must never land on the next player.
+export function placeBid(rt, userId, expectedAmount, expectedPlayerId) {
   return exclusive(rt, async () => {
     const { room, live } = rt;
     assertNotBanned(rt, userId);
@@ -798,6 +799,9 @@ export function placeBid(rt, userId, expectedAmount) {
     if (!member.teamId) throw new HttpError(400, 'Pick a franchise in the lobby to take part');
     if (room.status !== 'active' || live?.status !== 'bidding' || live.timerEndsAt <= Date.now()) {
       throw new HttpError(409, 'Auction is not accepting bids right now.');
+    }
+    if (expectedPlayerId !== undefined && expectedPlayerId !== live.playerId) {
+      throw new HttpError(409, 'Bid not accepted: bidding has moved on to the next player.');
     }
     if (live.highBidderId === userId) throw new HttpError(409, 'You are already the highest bidder!');
 

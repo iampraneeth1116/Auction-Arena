@@ -4,23 +4,28 @@
 let refreshInFlight = null;
 
 // Trades the refresh cookie for a fresh access cookie. Concurrent callers share one request.
-export function refreshSession() {
+// Resolves to 'ok', 'invalid' (the session has ended: sign in again) or 'unreachable' (no
+// usable answer, e.g. the network is still coming back: worth trying again).
+export function renewSession() {
   if (!refreshInFlight) {
     refreshInFlight = (async () => {
       for (let attempt = 0; attempt < 2; attempt++) {
         const res = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' });
-        if (res.ok) return true;
+        if (res.ok) return 'ok';
+        if (res.status === 401) return 'invalid';
         // 409: another tab rotated the token a moment ago and its new cookie is already set
-        if (res.status !== 409) return false;
+        if (res.status !== 409) return 'unreachable';
         await new Promise(resolve => setTimeout(resolve, 400));
       }
-      return false;
+      return 'unreachable';
     })()
-      .catch(() => false)
+      .catch(() => 'unreachable')
       .finally(() => { refreshInFlight = null; });
   }
   return refreshInFlight;
 }
+
+const refreshSession = async () => (await renewSession()) === 'ok';
 
 const NO_REFRESH_PATHS = new Set([
   '/api/auth/login',

@@ -158,6 +158,10 @@ try {
   check("bob's purse goes down by the price", Math.abs(csk.budgetRemaining - (120 - price)) < 1e-9, String(csk.budgetRemaining));
   check('a SOLD card message goes to the room', alice.messages().some(m => m.type === 'sold_card' && m.metadata?.playerId === first.id));
   check('the next player comes up after the SOLD card', await eventually(alice, () => alice.state.currentIndex === 1 && alice.state.currentAuction?.status === 'bidding', 8000, 'next'));
+  // A bid held up by a bad connection must not land on whoever is up next, even at the same price
+  const second = IPL_PLAYERS[order[1]];
+  check('a late bid for the previous player is refused', /moved on to the next player/.test((await alice.emit('bid:place', { roomId, amount: second.basePrice, playerId: first.id })).error || ''));
+  check('the late bid leaves the lot untouched', !alice.state.currentAuction?.highBidderId && alice.state.currentAuction?.currentBid === 0);
   check('with no bids the lot goes unsold', await eventually(alice, () => alice.state.currentAuction?.status === 'unsold', 6000, 'unsold'));
   check('a buyer cannot switch franchise', /after buying players/.test((await bob.emit('team:select', { roomId, teamId: 'RCB' })).error || ''));
 
@@ -165,7 +169,7 @@ try {
   check('the third lot opens', await eventually(alice, () => alice.state.currentIndex === 2 && alice.state.currentAuction?.status === 'bidding', 6000, 'lot 3'));
   check('only the host pauses', /Only the host/.test((await bob.emit('auction:pause', { roomId })).error || ''));
   const lot3 = IPL_PLAYERS[order[2]];
-  check('bob opens the third lot', (await bob.emit('bid:place', { roomId, amount: lot3.basePrice })).ok);
+  check('bob opens the third lot, naming the player on the block', (await bob.emit('bid:place', { roomId, amount: lot3.basePrice, playerId: lot3.id })).ok);
   check('host pauses', (await alice.emit('auction:pause', { roomId })).ok);
   check('everyone sees the pause', await eventually(bob, () => bob.state.currentAuction?.status === 'paused', 3000, 'paused'));
   check('a bid while paused is refused', /not accepting bids/.test((await alice.emit('bid:place', { roomId, amount: step(lot3.basePrice) })).error || ''));
