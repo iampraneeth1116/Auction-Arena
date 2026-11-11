@@ -6,7 +6,9 @@ import * as rooms from './roomManager.js';
 
 export function createSocketServer(httpServer) {
   // The React app is served from the same origin, so no CORS configuration is needed
-  const io = new Server(httpServer, { serveClient: false });
+  // A ping every 5 s, answered within 5 s: a connection that dies silently (a phone losing signal)
+  // is noticed within 10 s rather than the default 45, which matters most when it's the host's
+  const io = new Server(httpServer, { serveClient: false, pingInterval: 5000, pingTimeout: 5000 });
   rooms.attachIo(io);
 
   // Authenticate the handshake with the same httpOnly access-token cookie the API uses
@@ -83,10 +85,10 @@ export function createSocketServer(httpServer) {
     handle('chat:send', async ({ roomId, text, type }) => rooms.sendChat(await loadRoom(roomId), user.id, { text, type }));
     handle('lineup:save', async ({ roomId, playerIds }) => rooms.saveBattingOrder(await loadRoom(roomId), user.id, playerIds));
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
       for (const roomId of socket.data.rooms) {
         const rt = rooms.getCachedRuntime(roomId);
-        if (rt) rooms.removePresence(rt, user.id);
+        if (rt) rooms.removePresence(rt, user.id, { linkDied: reason === 'ping timeout' });
       }
     });
   });

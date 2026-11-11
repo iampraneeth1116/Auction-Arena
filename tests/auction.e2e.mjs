@@ -13,7 +13,8 @@ import { profileOf } from '../src/lib/playerProfile.js';
 const PORT = 3099;
 const ADMIN_EMAIL = 'admin@arena.test';
 // Keep Google sign-in unconfigured for this run, whatever .env contains
-const SERVER_ENV = { GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '', ADMIN_EMAIL };
+// A room gives up waiting for a host who lost connection after 6 s here, not 3 minutes
+const SERVER_ENV = { GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '', ADMIN_EMAIL, HOST_AWAY_LIMIT_MS: '6000' };
 
 const { check, failedCount, printSummary } = createChecker();
 const step = (crores) => Math.round(crores * 100 + (crores < 5 ? 20 : 25)) / 100;
@@ -202,6 +203,87 @@ try {
   check('bids after the end are refused', /not accepting bids/.test((await bob.emit('bid:place', { roomId, amount: lot3.basePrice })).error || ''));
   alice.disconnect();
   bob.disconnect();
+
+  // ─── The host loses connection ───
+  // Bidding pauses until the host is back. Anyone else dropping out changes nothing.
+  {
+    const awayHost = await signedIn('AwayHost');
+    const stayer = await signedIn('Stayer');
+    const dropper = await signedIn('Dropper');
+    const awayRoom = (await awayHost.req('POST', '/api/rooms', { teamId: 'GT', bidTimer: 20 })).data.id;
+    await stayer.req('POST', `/api/rooms/${awayRoom}/join`, { teamId: 'LSG' });
+    await dropper.req('POST', `/api/rooms/${awayRoom}/join`, { teamId: 'PBKS' });
+    for (const client of [awayHost, stayer, dropper]) {
+      await client.connect();
+      await client.join(awayRoom);
+    }
+    await awayHost.emit('auction:start', { roomId: awayRoom });
+    await stayer.waitFor(() => stayer.state.currentAuction?.status === 'bidding', 5000, 'away room live');
+    const lot = () => stayer.state.currentAuction;
+    const basePrice = () => IPL_PLAYERS.find(p => p.id === lot().playerId).basePrice;
+    const lostMessages = () => stayer.messages().filter(m => /host lost connection/.test(m.text)).length;
+    const hostBack = async () => {
+      await awayHost.connect();
+      await awayHost.join(awayRoom);
+    };
+    await stayer.emit('bid:place', { roomId: awayRoom, amount: basePrice() });
+
+    dropper.disconnect();
+    await new Promise(r => setTimeout(r, 3500));
+    check('another manager dropping out does not pause the auction', lot().status === 'bidding' && lostMessages() === 0);
+
+    awayHost.disconnect();
+    await new Promise(r => setTimeout(r, 1000));
+    check('a host gone for a moment does not pause anything yet', lot().status === 'bidding');
+    check('a host who stays gone pauses live bidding', await eventually(stayer, () => lot().status === 'paused' && lot().pausedBy === 'host-away', 4000, 'host-away pause'));
+    check('the room is told why', stayer.messages().some(m => m.text === 'Auction PAUSED: the host lost connection. Bidding carries on when they\'re back.'));
+    check('nobody can bid while the host is away', /not accepting bids/.test((await stayer.emit('bid:place', { roomId: awayRoom, amount: step(basePrice()) })).error || ''));
+    await new Promise(r => setTimeout(r, 1500));
+    check('the clock stands still while the host is away', lot().status === 'paused');
+    await hostBack();
+    check('the host coming back resumes bidding with a fresh clock and the bid standing', await eventually(stayer, () =>
+      lot().status === 'bidding' && !lot().pausedBy && lot().highBidderId === stayer.user.id && lot().timerEndsAt - Date.now() > 15000, 3000, 'host back'));
+    check('the room is told the host is back', stayer.messages().some(m => m.text === 'Auction RESUMED: the host is back'));
+
+    awayHost.disconnect();
+    await new Promise(r => setTimeout(r, 500));
+    await hostBack();
+    await new Promise(r => setTimeout(r, 3500));
+    check('a quick reconnect (a page reload) does not pause', lot().status === 'bidding' && lostMessages() === 1);
+
+    check('the host pauses by hand', (await awayHost.emit('auction:pause', { roomId: awayRoom })).ok);
+    awayHost.disconnect();
+    await new Promise(r => setTimeout(r, 3500));
+    await hostBack();
+    await new Promise(r => setTimeout(r, 1000));
+    check("the host's own pause stays when they come back", lot().status === 'paused' && lot().pausedBy === 'host');
+    check('and they resume it themselves', (await awayHost.emit('auction:resume', { roomId: awayRoom })).ok);
+
+    // Give up on a host who doesn't come back (after 6 s in this test, 3 minutes for real)
+    await awayHost.emit('settings:update', { roomId: awayRoom, bidTimer: 3 });
+    awayHost.disconnect();
+    check('the host drops out again and bidding pauses', await eventually(stayer, () => lot().status === 'paused' && lot().pausedBy === 'host-away', 5000, 'second pause'));
+    check('a host who never comes back does not hold the room up for good', await eventually(stayer, () => lot().status === 'bidding', 9000, 'carry on'));
+    check('the room is told it carries on without them', stayer.messages().some(m => /hasn't come back, so bidding carries on without them/.test(m.text)));
+    const givenUpAt = stayer.state.currentIndex;
+    check('the next lots run without them, unpaused', await eventually(stayer, () => stayer.state.currentIndex > givenUpAt && lot().status === 'bidding', 12000, 'next lot runs'));
+
+    // Dropping out on a SOLD card: the card plays out and the next player comes up paused
+    await hostBack();
+    await stayer.waitFor(() => lot().status === 'bidding' && lot().timerEndsAt - Date.now() > 1500, 12000, 'a fresh lot');
+    await stayer.emit('bid:place', { roomId: awayRoom, amount: basePrice() });
+    await stayer.waitFor(() => lot().status === 'sold', 6000, 'sold');
+    const soldAt = stayer.state.currentIndex;
+    awayHost.disconnect();
+    check('a host lost on the SOLD card holds the next player', await eventually(stayer, () =>
+      stayer.state.currentIndex === soldAt + 1 && lot().status === 'paused' && lot().pausedBy === 'host-away', 9000, 'next lot paused'));
+    check('the room is told the next player waits', stayer.messages().some(m => m.text === 'The host lost connection. The next player waits until they\'re back.'));
+    await hostBack();
+    check('and it opens when the host is back', await eventually(stayer, () => lot().status === 'bidding', 3000, 'opens on return'));
+
+    await awayHost.emit('auction:end', { roomId: awayRoom });
+    for (const client of [awayHost, stayer]) client.disconnect();
+  }
 
   // ─── Squad, overseas and purse rules ───
   // Squads are seeded straight into the database before anyone opens the room

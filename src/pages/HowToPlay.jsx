@@ -660,7 +660,8 @@ const Bidding = () => (
       </Note>
       <Note icon={Pause} title="Host controls" tone="gold">
         The host can pause live bidding and resume it with a fresh clock, end the auction early, or hide who&rsquo;s
-        coming next so every lot is a surprise.
+        coming next so every lot is a surprise. If the host loses connection, bidding pauses by itself and carries on
+        when they&rsquo;re back. After 3 minutes without them, it carries on anyway.
       </Note>
     </div>
   </Section>

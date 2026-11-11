@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { prisma } from '../db.js';
+import { config } from '../config.js';
 import { IPL_PLAYERS } from '../../src/data/players.js';
 import { HttpError } from '../validation.js';
 import { lineupProblem } from '../../src/lib/lineup.js';
@@ -31,6 +32,8 @@ import {
 
 const MESSAGE_HISTORY = 200;
 const CHAT_MIN_INTERVAL_MS = 500;
+// A host gone for less than this (a page reload, the lobby handing over to the auction) doesn't pause anything
+const HOST_AWAY_GRACE_MS = 3000;
 // No 0/O or 1/I, so codes are easy to read out to friends
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -78,6 +81,10 @@ function toRuntime(row) {
     market: null,
     // userId → open connections, so a second tab doesn't flip someone offline
     presence: new Map(),
+    // null, or 'waiting' while bidding is paused for a host who lost connection, or 'carried-on'
+    // once the auction stopped waiting for them
+    hostAway: null,
+    hostTimer: null,
     lastChatAt: new Map(),
     queue: Promise.resolve(),
   };
@@ -114,6 +121,7 @@ async function loadRuntime(roomId) {
     if (rt.live) {
       scheduleNext(rt);
       scheduleBots(rt);
+      if (pausedForHost(rt)) waitForHost(rt);
     } else await exclusive(rt, () => startPlayer(rt, rt.room.currentIndex, FIRST_PLAYER_MS));
   }
   return rt;
@@ -217,22 +225,90 @@ async function addMessage(rt, { userId = null, userName = 'System', type = 'log'
 export function addPresence(rt, userId) {
   rt.presence.set(userId, (rt.presence.get(userId) || 0) + 1);
   broadcast(rt);
+  if (userId === rt.room.hostId) hostReturned(rt);
 }
 
-export function removePresence(rt, userId) {
+// linkDied: the connection stopped answering a while ago, so there's no reason to wait any longer
+export function removePresence(rt, userId, { linkDied = false } = {}) {
   const count = (rt.presence.get(userId) || 0) - 1;
   if (count > 0) rt.presence.set(userId, count);
   else rt.presence.delete(userId);
   broadcast(rt);
+  if (userId === rt.room.hostId && !rt.presence.has(userId)) hostLeft(rt, linkDied ? 0 : HOST_AWAY_GRACE_MS);
 
   // Free memory for rooms nobody has open; the next visitor loads them again.
   // A running auction stays: its clock keeps going with nobody watching.
   rt.queue.then(() => {
     if (rt.presence.size === 0 && rt.room.status !== 'active' && runtimes.get(rt.room.id) === rt) {
       clearTimer(rt);
+      clearHostTimer(rt);
       runtimes.delete(rt.room.id);
     }
   });
+}
+
+// ─── The host's connection ───
+// When the host drops out mid-auction, live bidding pauses until they're back, so nobody buys
+// players while the person running the room can't see it. Anyone else dropping out changes
+// nothing. A host who doesn't come back within config.hostAwayLimitMs doesn't hold the room
+// up for good: the auction carries on without them.
+
+const hostIsHere = (rt) => rt.presence.has(rt.room.hostId);
+const pausedForHost = (rt) => rt.live?.status === 'paused' && rt.live.pausedBy === 'host-away';
+
+function clearHostTimer(rt) {
+  if (rt.hostTimer) {
+    clearTimeout(rt.hostTimer);
+    rt.hostTimer = null;
+  }
+}
+
+function runForHost(rt, task, delayMs) {
+  clearHostTimer(rt);
+  rt.hostTimer = setTimeout(() => {
+    rt.hostTimer = null;
+    exclusive(rt, () => task(rt)).catch(err => console.error(`[room ${rt.room.id}] ${task.name} failed`, err));
+  }, delayMs);
+}
+
+function hostLeft(rt, graceMs) {
+  if (rt.room.status !== 'active' || rt.hostAway) return;
+  runForHost(rt, pauseForHost, graceMs);
+}
+
+// Starts the wait for the host, and the clock on how long the room will wait
+function waitForHost(rt) {
+  rt.hostAway = 'waiting';
+  runForHost(rt, carryOnWithoutHost, config.hostAwayLimitMs);
+}
+
+async function pauseForHost(rt) {
+  if (rt.room.status !== 'active' || hostIsHere(rt) || rt.hostAway) return;
+  waitForHost(rt);
+  if (rt.live?.status === 'bidding') {
+    await pauseLive(rt, 'host-away', 'Auction PAUSED: the host lost connection. Bidding carries on when they\'re back.');
+  } else if (rt.live?.status === 'sold' || rt.live?.status === 'unsold') {
+    // The card plays out and the next lot opens paused (see startPlayer)
+    await addMessage(rt, { text: 'The host lost connection. The next player waits until they\'re back.' });
+  }
+}
+
+async function carryOnWithoutHost(rt) {
+  if (rt.room.status !== 'active' || hostIsHere(rt) || rt.hostAway !== 'waiting') return;
+  rt.hostAway = 'carried-on';
+  if (pausedForHost(rt)) await resumeLive(rt, 'Auction RESUMED: the host hasn\'t come back, so bidding carries on without them');
+}
+
+function hostReturned(rt) {
+  clearHostTimer(rt);
+  rt.hostAway = null;
+  if (!pausedForHost(rt)) return;
+  exclusive(rt, async () => {
+    // A pause the host chose themselves stays until they resume it
+    if (rt.room.status === 'active' && pausedForHost(rt) && hostIsHere(rt)) {
+      await resumeLive(rt, 'Auction RESUMED: the host is back');
+    }
+  }).catch(err => console.error(`[room ${rt.room.id}] resuming for the host failed`, err));
 }
 
 // ─── The auction clock ───
@@ -291,6 +367,8 @@ async function startPlayer(rt, index, durationMs) {
     timerEndsAt: Date.now() + durationMs,
     status: 'bidding',
     resolvedAt: null,
+    // While the room waits for its host, the next player comes up paused
+    ...(rt.hostAway === 'waiting' && { status: 'paused', pausedBy: 'host-away' }),
   };
   await prisma.room.update({ where: { id: rt.room.id }, data: { currentIndex: index, liveState: live } });
   rt.room.currentIndex = index;
@@ -395,6 +473,7 @@ async function startUnsoldRound(rt) {
 
 async function completeRoom(rt, text) {
   clearTimer(rt);
+  clearHostTimer(rt);
   await prisma.room.update({ where: { id: rt.room.id }, data: { status: 'completed' } });
   rt.room.status = 'completed';
   await addMessage(rt, { text });
@@ -819,6 +898,28 @@ export function placeBid(rt, userId, expectedAmount, expectedPlayerId) {
   });
 }
 
+// pausedBy: 'host' (the Pause button) or 'host-away' (the host lost connection)
+async function pauseLive(rt, pausedBy, text) {
+  const pausedLive = { ...rt.live, status: 'paused', pausedBy };
+  await prisma.room.update({ where: { id: rt.room.id }, data: { liveState: pausedLive } });
+  rt.live = pausedLive;
+  clearTimer(rt);
+  await addMessage(rt, { text });
+  broadcast(rt);
+}
+
+// The current bid stands and the clock restarts in full
+async function resumeLive(rt, text) {
+  const { pausedBy: _pausedBy, ...live } = rt.live;
+  const resumedLive = { ...live, status: 'bidding', timerEndsAt: Date.now() + rt.room.bidTimer * 1000 };
+  await prisma.room.update({ where: { id: rt.room.id }, data: { liveState: resumedLive } });
+  rt.live = resumedLive;
+  await addMessage(rt, { text });
+  broadcast(rt);
+  scheduleNext(rt);
+  scheduleBots(rt);
+}
+
 export function pauseAuction(rt, userId) {
   return exclusive(rt, async () => {
     requireHost(rt, userId);
@@ -826,12 +927,7 @@ export function pauseAuction(rt, userId) {
     if (rt.room.status !== 'active' || rt.live?.status !== 'bidding') {
       throw new HttpError(409, 'Only live bidding can be paused');
     }
-    const pausedLive = { ...rt.live, status: 'paused' };
-    await prisma.room.update({ where: { id: rt.room.id }, data: { liveState: pausedLive } });
-    rt.live = pausedLive;
-    clearTimer(rt);
-    await addMessage(rt, { text: 'Auction PAUSED by the host' });
-    broadcast(rt);
+    await pauseLive(rt, 'host', 'Auction PAUSED by the host');
   });
 }
 
@@ -841,14 +937,7 @@ export function resumeAuction(rt, userId) {
     if (rt.room.status !== 'active' || rt.live?.status !== 'paused') {
       throw new HttpError(409, 'The auction is not paused');
     }
-    // The current bid stands and the clock restarts in full
-    const resumedLive = { ...rt.live, status: 'bidding', timerEndsAt: Date.now() + rt.room.bidTimer * 1000 };
-    await prisma.room.update({ where: { id: rt.room.id }, data: { liveState: resumedLive } });
-    rt.live = resumedLive;
-    await addMessage(rt, { text: 'Auction RESUMED by the host' });
-    broadcast(rt);
-    scheduleNext(rt);
-    scheduleBots(rt);
+    await resumeLive(rt, 'Auction RESUMED by the host');
   });
 }
 

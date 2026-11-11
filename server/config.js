@@ -31,4 +31,6 @@ export const config = {
   groqApiKey: process.env.GROQ_API_KEY || '',
   groqModel: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
   groqBaseUrl: (process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1').replace(/\/$/, ''),
+  // How long a paused auction waits for a host who lost connection before carrying on without them
+  hostAwayLimitMs: Number(process.env.HOST_AWAY_LIMIT_MS) || 3 * 60 * 1000,
 };

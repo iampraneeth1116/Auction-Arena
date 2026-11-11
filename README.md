@@ -33,7 +33,7 @@ Claim a franchise, bid against each other on 500+ real players, let bots fill th
 **Rooms**
 - **Open rooms** — list your room publicly; anyone signed in can find it, join an open franchise or watch.
 - **Spectating** — watch any room with `?watch=1`. Arrive after the start and you can claim any franchise nobody holds.
-- **Host controls** — bid timer, visibility, quick pool, unsold rounds, overseas limit, hiding upcoming players, pause/resume/end, removing people.
+- **Host controls** — bid timer, visibility, quick pool, unsold rounds, overseas limit, hiding upcoming players, pause/resume/end, removing people. If the host loses connection mid-auction, bidding pauses until they're back (or for 3 minutes at most).
 - **Chat with GIFs**, presence, and a history of every auction you've played (remove one, with undo).
 
 **After the hammer**

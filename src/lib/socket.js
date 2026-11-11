@@ -54,7 +54,18 @@ function dropIfSilent(activeSocket) {
 export function getSocket() {
   if (socket) return socket;
 
-  const created = io({ autoConnect: false, withCredentials: true, reconnectionDelay: 500, reconnectionDelayMax: 3000 });
+  const created = io({
+    autoConnect: false,
+    withCredentials: true,
+    // Straight onto a fresh WebSocket: after a dropped signal, polling can be handed one of the
+    // browser's old pooled connections and hang. Networks that block WebSockets fall back to polling.
+    transports: ['websocket', 'polling'],
+    tryAllTransports: true,
+    // A connection attempt that hangs is abandoned and tried again sooner than the default 20 s
+    timeout: 8000,
+    reconnectionDelay: 500,
+    reconnectionDelayMax: 3000,
+  });
   const heard = () => { lastHeardAt = Date.now(); };
   const timers = new Set();
   const later = (fn, ms) => {

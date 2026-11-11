@@ -1,6 +1,6 @@
 import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Gavel, PauseCircle } from 'lucide-react';
+import { Gavel, PauseCircle, WifiOff } from 'lucide-react';
 import TeamCrest from '../ui/TeamCrest';
 import { TEAMS_BY_ID } from '../../lib/catalog';
 import { formatPrice } from '../../lib/format';
@@ -63,10 +63,16 @@ const ResultBanner = ({ live, player, buyerName }) => {
           )}
 
           {status === 'paused' && (
-            <motion.div className="text-center" initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
-              <PauseCircle size={48} className="mx-auto text-gold" />
+            <motion.div className="px-4 text-center" initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
+              {live.pausedBy === 'host-away'
+                ? <WifiOff size={48} className="mx-auto text-gold" />
+                : <PauseCircle size={48} className="mx-auto text-gold" />}
               <div className="mt-2 font-display text-4xl font-extrabold uppercase">Paused</div>
-              <p className="text-sm text-mist">The host paused bidding. The clock restarts when they resume.</p>
+              <p className="text-sm text-mist">
+                {live.pausedBy === 'host-away'
+                  ? 'The host lost connection. Bidding carries on with a fresh clock when they\'re back.'
+                  : 'The host paused bidding. The clock restarts when they resume.'}
+              </p>
             </motion.div>
           )}
         </motion.div>
