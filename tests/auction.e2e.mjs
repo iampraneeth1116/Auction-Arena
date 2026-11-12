@@ -232,10 +232,34 @@ try {
     await new Promise(r => setTimeout(r, 3500));
     check('another manager dropping out does not pause the auction', lot().status === 'bidding' && lostMessages() === 0);
 
+    // Moving from the lobby to the auction screen closes the room and opens it again at once
+    await awayHost.emit('room:leave', { roomId: awayRoom });
+    await awayHost.join(awayRoom);
+    await new Promise(r => setTimeout(r, 1500));
+    check('the host switching screens does not pause', lot().status === 'bidding' && lostMessages() === 0);
+
+    // The host's connection goes quiet for 2 s without closing (a phone's signal dropping), then works again
+    const quietSocket = awayHost.socket.io.engine.transport.ws._socket;
+    const pausedSeen = [];
+    const watchQuiet = setInterval(() => pausedSeen.push(lot().status), 100);
+    quietSocket.pause();
+    await new Promise(r => setTimeout(r, 2000));
+    quietSocket.resume();
+    check('even a 2 s drop of the host pauses bidding', pausedSeen.includes('paused') && lostMessages() === 1, pausedSeen.join(','));
+    check('and bidding resumes as soon as the same connection answers again', await eventually(stayer, () => lot().status === 'bidding', 2000, 'quiet resume'));
+    clearInterval(watchQuiet);
+
+    // The connection goes quiet for good and the host's browser opens a new one 5 s later,
+    // long before the old one would time out
+    awayHost.socket.io.engine.transport.ws._socket.pause();
+    check('a host whose connection dies pauses bidding within 2 s', await eventually(stayer, () => lot().status === 'paused' && lot().pausedBy === 'host-away', 2000, 'dead link pause'));
+    await new Promise(r => setTimeout(r, 3000));
+    check('the clock stands still while the dead connection lingers', lot().status === 'paused');
+    await hostBack();
+    check('the host back on a new connection resumes bidding', await eventually(stayer, () => lot().status === 'bidding', 2000, 'new link resume'));
+
     awayHost.disconnect();
-    await new Promise(r => setTimeout(r, 1000));
-    check('a host gone for a moment does not pause anything yet', lot().status === 'bidding');
-    check('a host who stays gone pauses live bidding', await eventually(stayer, () => lot().status === 'paused' && lot().pausedBy === 'host-away', 4000, 'host-away pause'));
+    check('a host who closes the room pauses live bidding', await eventually(stayer, () => lot().status === 'paused' && lot().pausedBy === 'host-away', 2000, 'host-away pause'));
     check('the room is told why', stayer.messages().some(m => m.text === 'Auction PAUSED: the host lost connection. Bidding carries on when they\'re back.'));
     check('nobody can bid while the host is away', /not accepting bids/.test((await stayer.emit('bid:place', { roomId: awayRoom, amount: step(basePrice()) })).error || ''));
     await new Promise(r => setTimeout(r, 1500));
@@ -245,15 +269,9 @@ try {
       lot().status === 'bidding' && !lot().pausedBy && lot().highBidderId === stayer.user.id && lot().timerEndsAt - Date.now() > 15000, 3000, 'host back'));
     check('the room is told the host is back', stayer.messages().some(m => m.text === 'Auction RESUMED: the host is back'));
 
-    awayHost.disconnect();
-    await new Promise(r => setTimeout(r, 500));
-    await hostBack();
-    await new Promise(r => setTimeout(r, 3500));
-    check('a quick reconnect (a page reload) does not pause', lot().status === 'bidding' && lostMessages() === 1);
-
     check('the host pauses by hand', (await awayHost.emit('auction:pause', { roomId: awayRoom })).ok);
     awayHost.disconnect();
-    await new Promise(r => setTimeout(r, 3500));
+    await new Promise(r => setTimeout(r, 2000));
     await hostBack();
     await new Promise(r => setTimeout(r, 1000));
     check("the host's own pause stays when they come back", lot().status === 'paused' && lot().pausedBy === 'host');

@@ -32,13 +32,14 @@ import {
 
 const MESSAGE_HISTORY = 200;
 const CHAT_MIN_INTERVAL_MS = 500;
-// A host gone for less than this (a page reload, the lobby handing over to the auction) doesn't pause anything
-const HOST_AWAY_GRACE_MS = 3000;
 // No 0/O or 1/I, so codes are easy to read out to friends
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 let io = null;
-export const attachIo = (server) => { io = server; };
+export const attachIo = (server) => {
+  io = server;
+  setInterval(() => runtimes.forEach(checkHost), HOST_CHECK_MS).unref();
+};
 export const roomChannel = (roomId) => `room:${roomId}`;
 export const userChannel = (userId) => `user:${userId}`;
 
@@ -81,10 +82,12 @@ function toRuntime(row) {
     market: null,
     // userId → open connections, so a second tab doesn't flip someone offline
     presence: new Map(),
-    // null, or 'waiting' while bidding is paused for a host who lost connection, or 'carried-on'
-    // once the auction stopped waiting for them
+    // null, 'leaving' (the host's connection just dropped), 'waiting' (bidding is paused for them)
+    // or 'carried-on' (the auction stopped waiting for them)
     hostAway: null,
     hostTimer: null,
+    // Whether the host has had the room open since this server loaded it
+    hostSeen: false,
     lastChatAt: new Map(),
     queue: Promise.resolve(),
   };
@@ -225,16 +228,18 @@ async function addMessage(rt, { userId = null, userName = 'System', type = 'log'
 export function addPresence(rt, userId) {
   rt.presence.set(userId, (rt.presence.get(userId) || 0) + 1);
   broadcast(rt);
-  if (userId === rt.room.hostId) hostReturned(rt);
+  if (userId === rt.room.hostId) {
+    rt.hostSeen = true;
+    checkHost(rt);
+  }
 }
 
-// linkDied: the connection stopped answering a while ago, so there's no reason to wait any longer
-export function removePresence(rt, userId, { linkDied = false } = {}) {
+export function removePresence(rt, userId) {
   const count = (rt.presence.get(userId) || 0) - 1;
   if (count > 0) rt.presence.set(userId, count);
   else rt.presence.delete(userId);
   broadcast(rt);
-  if (userId === rt.room.hostId && !rt.presence.has(userId)) hostLeft(rt, linkDied ? 0 : HOST_AWAY_GRACE_MS);
+  if (userId === rt.room.hostId) checkHost(rt);
 
   // Free memory for rooms nobody has open; the next visitor loads them again.
   // A running auction stays: its clock keeps going with nobody watching.
@@ -248,12 +253,36 @@ export function removePresence(rt, userId, { linkDied = false } = {}) {
 }
 
 // ─── The host's connection ───
-// When the host drops out mid-auction, live bidding pauses until they're back, so nobody buys
-// players while the person running the room can't see it. Anyone else dropping out changes
-// nothing. A host who doesn't come back within config.hostAwayLimitMs doesn't hold the room
-// up for good: the auction carries on without them.
+// When the host's connection drops mid-auction, live bidding pauses until they're back, so nobody
+// buys players while the person running the room can't see it. Anyone else dropping out changes
+// nothing. A host who doesn't come back within config.hostAwayLimitMs doesn't hold the room up
+// for good: the auction carries on without them.
+//
+// A dropped connection usually isn't closed: it just goes quiet, and the host's browser opens a
+// new one a few seconds later. Waiting for the old one to time out would miss short drops, so
+// four times a second the server checks when it last heard from each of the host's connections.
 
-const hostIsHere = (rt) => rt.presence.has(rt.room.hostId);
+// The server pings every connection twice a second, so a working one is never quiet this long:
+// a host gone for even 2 s pauses bidding
+const HOST_SILENCE_MS = 1500;
+// After the host's connections have all closed, how long before bidding pauses. Moving from the
+// lobby to the auction screen closes and reopens the room in a few milliseconds.
+const HOST_GRACE_MS = 500;
+const HOST_CHECK_MS = 250;
+
+// 'here', 'quiet' (still connected but silent long enough to be a dead link) or 'gone'
+function hostLink(rt) {
+  const sockets = io?.of('/').sockets;
+  let connected = false;
+  for (const id of io?.of('/').adapter.rooms.get(roomChannel(rt.room.id)) ?? []) {
+    const socket = sockets.get(id);
+    if (socket?.data.user?.id !== rt.room.hostId) continue;
+    connected = true;
+    if (Date.now() - (socket.data.lastHeardAt ?? 0) < HOST_SILENCE_MS) return 'here';
+  }
+  return connected ? 'quiet' : 'gone';
+}
+
 const pausedForHost = (rt) => rt.live?.status === 'paused' && rt.live.pausedBy === 'host-away';
 
 function clearHostTimer(rt) {
@@ -271,9 +300,19 @@ function runForHost(rt, task, delayMs) {
   }, delayMs);
 }
 
-function hostLeft(rt, graceMs) {
-  if (rt.room.status !== 'active' || rt.hostAway) return;
-  runForHost(rt, pauseForHost, graceMs);
+// Runs every HOST_CHECK_MS for each room, and whenever the host opens or closes the room
+function checkHost(rt) {
+  // After a restart, nothing changes until the host has been back at least once
+  if (rt.room.status !== 'active' || !rt.hostSeen) return;
+  const link = hostLink(rt);
+  if (link === 'here') {
+    if (rt.hostAway || pausedForHost(rt)) hostReturned(rt);
+    return;
+  }
+  if (rt.hostAway) return;
+  rt.hostAway = 'leaving';
+  // A quiet link has been dead for HOST_SILENCE_MS already; a closed one gets a moment to reopen
+  runForHost(rt, pauseForHost, link === 'quiet' ? 0 : HOST_GRACE_MS);
 }
 
 // Starts the wait for the host, and the clock on how long the room will wait
@@ -283,7 +322,7 @@ function waitForHost(rt) {
 }
 
 async function pauseForHost(rt) {
-  if (rt.room.status !== 'active' || hostIsHere(rt) || rt.hostAway) return;
+  if (rt.room.status !== 'active' || rt.hostAway !== 'leaving' || hostLink(rt) === 'here') return;
   waitForHost(rt);
   if (rt.live?.status === 'bidding') {
     await pauseLive(rt, 'host-away', 'Auction PAUSED: the host lost connection. Bidding carries on when they\'re back.');
@@ -294,7 +333,7 @@ async function pauseForHost(rt) {
 }
 
 async function carryOnWithoutHost(rt) {
-  if (rt.room.status !== 'active' || hostIsHere(rt) || rt.hostAway !== 'waiting') return;
+  if (rt.room.status !== 'active' || rt.hostAway !== 'waiting' || hostLink(rt) === 'here') return;
   rt.hostAway = 'carried-on';
   if (pausedForHost(rt)) await resumeLive(rt, 'Auction RESUMED: the host hasn\'t come back, so bidding carries on without them');
 }
@@ -305,7 +344,7 @@ function hostReturned(rt) {
   if (!pausedForHost(rt)) return;
   exclusive(rt, async () => {
     // A pause the host chose themselves stays until they resume it
-    if (rt.room.status === 'active' && pausedForHost(rt) && hostIsHere(rt)) {
+    if (rt.room.status === 'active' && pausedForHost(rt) && hostLink(rt) === 'here') {
       await resumeLive(rt, 'Auction RESUMED: the host is back');
     }
   }).catch(err => console.error(`[room ${rt.room.id}] resuming for the host failed`, err));

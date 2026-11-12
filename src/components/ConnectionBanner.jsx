@@ -4,7 +4,8 @@ import { useConnectionStatus } from '../hooks/useConnectionStatus';
 
 // Tells a player when their own connection has dropped, so a frozen screen never looks like a
 // stuck auction. The app reconnects by itself and the room catches up when it does.
-const ConnectionBanner = () => {
+// hosting: this is the host of a running auction, whose dropping out pauses bidding for everyone
+const ConnectionBanner = ({ hosting = false }) => {
   const status = useConnectionStatus();
   if (status !== 'reconnecting' && status !== 'signed-out') return null;
   const signedOut = status === 'signed-out';
@@ -21,7 +22,9 @@ const ConnectionBanner = () => {
         <span className="min-w-0 text-snow">
           {signedOut
             ? 'You were signed out. Sign in again to keep bidding.'
-            : 'Connection lost. Reconnecting…'}
+            : hosting
+              ? 'Connection lost. Bidding is paused until you\'re back. Reconnecting…'
+              : 'Connection lost. Reconnecting…'}
         </span>
         <button
           onClick={() => window.location.reload()}

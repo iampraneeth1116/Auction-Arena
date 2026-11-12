@@ -321,7 +321,7 @@ const AuctionRoom = () => {
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-grid">
-      <ConnectionBanner />
+      <ConnectionBanner hosting={isHost} />
       {/* Top bar */}
       <header className="flex h-14 shrink-0 items-center gap-1.5 border-b border-white/6 bg-ink-950/90 px-2 backdrop-blur sm:px-4">
         <Link to="/" aria-label="Auction Arena home" className="flex items-center">

@@ -6,9 +6,9 @@ import * as rooms from './roomManager.js';
 
 export function createSocketServer(httpServer) {
   // The React app is served from the same origin, so no CORS configuration is needed
-  // A ping every 5 s, answered within 5 s: a connection that dies silently (a phone losing signal)
-  // is noticed within 10 s rather than the default 45, which matters most when it's the host's
-  const io = new Server(httpServer, { serveClient: false, pingInterval: 5000, pingTimeout: 5000 });
+  // A ping every half second, so the server always knows when it last heard from each connection
+  // (the host's matters most, see roomManager). One unanswered for 5 s is closed.
+  const io = new Server(httpServer, { serveClient: false, pingInterval: 500, pingTimeout: 5000 });
   rooms.attachIo(io);
 
   // Authenticate the handshake with the same httpOnly access-token cookie the API uses
@@ -23,6 +23,9 @@ export function createSocketServer(httpServer) {
 
   io.on('connection', (socket) => {
     const { user } = socket.data;
+    // Anything at all from the browser (answers to pings included) shows the connection still works
+    socket.data.lastHeardAt = Date.now();
+    socket.conn.on('packet', () => { socket.data.lastHeardAt = Date.now(); });
     socket.join(rooms.userChannel(user.id));
 
     // Every event replies through its ack: { ok: true, ...result } or { error, code }
@@ -85,10 +88,10 @@ export function createSocketServer(httpServer) {
     handle('chat:send', async ({ roomId, text, type }) => rooms.sendChat(await loadRoom(roomId), user.id, { text, type }));
     handle('lineup:save', async ({ roomId, playerIds }) => rooms.saveBattingOrder(await loadRoom(roomId), user.id, playerIds));
 
-    socket.on('disconnect', (reason) => {
+    socket.on('disconnect', () => {
       for (const roomId of socket.data.rooms) {
         const rt = rooms.getCachedRuntime(roomId);
-        if (rt) rooms.removePresence(rt, user.id, { linkDied: reason === 'ping timeout' });
+        if (rt) rooms.removePresence(rt, user.id);
       }
     });
   });

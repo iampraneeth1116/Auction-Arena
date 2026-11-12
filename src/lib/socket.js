@@ -1,11 +1,14 @@
 import { io } from 'socket.io-client';
 import { renewSession } from './api';
 
-// While connected, the app asks the server for the time every few seconds. The answers keep
-// countdowns in step with the server, and an answer that never comes means the link died
-// without closing (common on phones), so the app reconnects instead of freezing on old state.
+// While connected, the app asks the server for the time every few seconds, which keeps countdowns
+// in step with the server. The server also pings twice a second, so a connection that has heard
+// nothing for LINK_SILENCE_MS has died without closing (common on phones): the app reconnects
+// instead of freezing on old state.
 const HEARTBEAT_MS = 3000;
 const PROBE_TIMEOUT_MS = 3500;
+const LINK_SILENCE_MS = 2500;
+const LINK_CHECK_MS = 500;
 const CLOCK_SAMPLES = 20;
 
 let socket = null;
@@ -46,7 +49,7 @@ function recordClockSample(sentAt, serverTime) {
 // Drops a link that has stopped answering. Socket.IO then reconnects, and the room page
 // rejoins and gets the room's current state.
 function dropIfSilent(activeSocket) {
-  if (socket === activeSocket && activeSocket.connected && Date.now() - lastHeardAt >= PROBE_TIMEOUT_MS) {
+  if (socket === activeSocket && activeSocket.connected && Date.now() - lastHeardAt >= LINK_SILENCE_MS) {
     activeSocket.io.engine?.close();
   }
 }
@@ -73,6 +76,7 @@ export function getSocket() {
     timers.add(timer);
   };
   let heartbeat = null;
+  let linkCheck = null;
 
   const probe = () => {
     if (socket !== created || !created.connected) return;
@@ -111,15 +115,18 @@ export function getSocket() {
     renewAttempts = 0;
     setStatus('connected');
     clearInterval(heartbeat);
+    clearInterval(linkCheck);
     // A few quick samples first, so countdowns are right from the start
     probe();
     later(probe, 300);
     later(probe, 800);
     heartbeat = setInterval(probe, HEARTBEAT_MS);
+    linkCheck = setInterval(() => dropIfSilent(created), LINK_CHECK_MS);
   });
 
   created.on('disconnect', (reason) => {
     clearInterval(heartbeat);
+    clearInterval(linkCheck);
     setStatus('reconnecting');
     // Socket.IO reconnects by itself after anything except a disconnect the server chose
     if (reason === 'io server disconnect') created.connect();
@@ -144,6 +151,7 @@ export function getSocket() {
 
   teardown = () => {
     clearInterval(heartbeat);
+    clearInterval(linkCheck);
     timers.forEach(clearTimeout);
     document.removeEventListener('visibilitychange', recheck);
     window.removeEventListener('online', recheck);
