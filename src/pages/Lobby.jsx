@@ -350,7 +350,7 @@ const HostControls = ({
           onChange={onQuickPool}
           disabled={Boolean(busy)}
           label="Quick pool"
-          description={`Players auctioned = ${managedCount} franchise${managedCount === 1 ? '' : 's'} × ${room.squadLimit} squad slots + 10 spares = ${auctionPoolSize({ auctionType: room.auctionType, quickPool: true, franchises: managedCount, squadLimit: room.squadLimit })}, instead of ${auctionPoolSize({ auctionType: room.auctionType, quickPool: false })}. Counted when you press Start.`}
+          description={`Players auctioned = ${managedCount} franchise${managedCount === 1 ? '' : 's'} × ${room.squadLimit} squad slots + 10 spares = ${auctionPoolSize({ auctionType: room.auctionType, quickPool: true, franchises: managedCount, squadLimit: room.squadLimit })}, instead of ${auctionPoolSize({ auctionType: room.auctionType, quickPool: false })}${MODE_META[room.auctionType]?.quickRegulars ? ', drawn from players with 5+ IPL 2026 matches' : ''}. Counted when you press Start.`}
         />
         {shorterPool && (
           <Toggle
@@ -359,7 +359,7 @@ const HostControls = ({
             onChange={(on) => onPlayerMix(on ? 'balanced' : 'stars')}
             disabled={Boolean(busy)}
             label="Balanced player mix"
-            description="An equal share of Elite, Star, Solid, Squad and Prospect players, each with at least 7 IPL matches, instead of mostly the top-rated. Applies whenever fewer than the full list go under the hammer."
+            description={`An equal share of Elite, Star, Solid, Squad and Prospect players, each with at least ${room.quickPool && MODE_META[room.auctionType]?.quickRegulars ? '5 IPL 2026 matches' : '7 IPL matches'}, instead of mostly the top-rated. Applies whenever fewer than the full list go under the hammer.`}
           />
         )}
         <Toggle
@@ -465,6 +465,11 @@ const MembersPanel = ({ players, uid, isHost, spectatorCount, onKick }) => {
 // Which players go under the hammer: the full list, or a shorter pool and how it's drawn
 const playerMixText = (room) => {
   if (!room.quickPool && !MODE_META[room.auctionType]?.pool) return 'The full player list';
+  if (room.quickPool && MODE_META[room.auctionType]?.quickRegulars) {
+    return room.playerMix === 'balanced'
+      ? 'Balanced: every rating tier equally, 5+ IPL 2026 matches each'
+      : 'The top-rated players with 5+ IPL 2026 matches';
+  }
   return room.playerMix === 'balanced' ? 'Balanced: every rating tier equally, 7+ IPL matches each' : 'Drawn from the top-rated players';
 };
 

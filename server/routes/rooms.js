@@ -10,7 +10,7 @@ const router = Router();
 
 const createSchema = z.object({
   teamId: z.string(),
-  auctionType: z.enum(['mega', 'sprint11', 'sprint5', 'blitz5']).default('mega'),
+  auctionType: z.enum(['mega', 'sprint11', 'sprint5']).default('mega'),
   // Listed in Open rooms for anyone to join or watch
   isPublic: z.boolean().optional(),
   quickPool: z.boolean().optional(),

@@ -20,7 +20,6 @@ import {
   isOverseas,
   nextBidLakhs,
   planUnsoldRound,
-  quickPoolSize,
   toCrores,
   toLakhs,
 } from '../auctionRules.js';
@@ -888,14 +887,13 @@ export function startAuction(rt, userId) {
     const managed = [...rt.members.values()].filter(m => m.teamId).length;
     if (managed < 2) throw new HttpError(409, 'At least 2 franchises need a manager to start');
 
-    // Quick pool: one squad's worth of players per franchise taking part, plus spares.
-    // Shorter pools are drawn for the franchises actually taking part.
-    const poolSize = rt.room.quickPool ? quickPoolSize(managed, rt.room.squadLimit) : undefined;
-    const playerOrder = buildPlayerOrder(rt.room.auctionType, poolSize, {
-      franchises: managed,
-      squadLimit: rt.room.squadLimit,
-      overseasLimit: rt.room.overseasLimit,
-    }, rt.room.playerMix);
+    // Shorter pools are drawn for the franchises actually taking part. Quick pool: one
+    // squad's worth of players per franchise, plus spares (this season's regulars, outside Mega).
+    const playerOrder = buildPlayerOrder(rt.room.auctionType, {
+      squads: { franchises: managed, squadLimit: rt.room.squadLimit, overseasLimit: rt.room.overseasLimit },
+      quickPool: rt.room.quickPool,
+      mix: rt.room.playerMix,
+    });
     await prisma.room.update({
       where: { id: rt.room.id },
       data: { status: 'active', playerOrder, currentIndex: 0 },

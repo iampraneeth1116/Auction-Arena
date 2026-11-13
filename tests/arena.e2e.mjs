@@ -5,14 +5,14 @@
 import { TestClient, createChecker, startServer } from './helpers.mjs';
 import { prisma } from '../server/db.js';
 import { IPL_PLAYERS } from '../src/data/players.js';
-import { RATINGS, buildPlayerOrder, incompletePenalty, isOverseas, planUnsoldRound } from '../server/auctionRules.js';
+import { AUCTION_MODES, PLAYER_MIXES, RATINGS, buildPlayerOrder, incompletePenalty, isOverseas, planUnsoldRound } from '../server/auctionRules.js';
 import { pickBotXI } from '../server/bots.js';
 import { teamStrength, xiOverseasCap } from '../src/lib/catalog.js';
 import { profileOf } from '../src/lib/playerProfile.js';
 import { nextBid } from '../src/lib/format.js';
 import { PLAYER_PROFILES } from '../src/data/playerProfiles.js';
 import { PLAYER_OUTLOOK } from '../src/data/playerOutlook.js';
-import { IPL_MATCHES, iplMatchesOf } from '../src/data/iplMatches.js';
+import { IPL_2026_MATCHES, IPL_MATCHES, ipl2026MatchesOf, iplMatchesOf } from '../src/data/iplMatches.js';
 import { buildRatings, ratingTier } from '../src/lib/playerRating.js';
 
 const PLAYERS = new Map(IPL_PLAYERS.map(p => [p.id, p]));
@@ -118,7 +118,6 @@ try {
   const slowClassic = (await host.req('POST', '/api/rooms', { teamId: 'MI', auctionType: 'sprint11', bidTimer: 20 })).data.id;
   const plainMega = (await host.req('POST', '/api/rooms', { teamId: 'MI' })).data.id;
   const classic = (await host.req('POST', '/api/rooms', { teamId: 'MI', auctionType: 'sprint11' })).data.id;
-  const blitz = (await host.req('POST', '/api/rooms', { teamId: 'MI', auctionType: 'blitz5' })).data.id;
   const sprint = (await host.req('POST', '/api/rooms', { teamId: 'MI', auctionType: 'sprint5' })).data.id;
   await host.connect();
   const classicState = (await host.join(classic)).state;
@@ -126,8 +125,8 @@ try {
   check('a Mega room created with 3-second bids uses them', (await host.join(fastMega)).state.settings.bidTimer === 3);
   check('a Classic room created with 20-second bids uses them', (await host.join(slowClassic)).state.settings.bidTimer === 20);
   check('without a choice the mode default applies (10s)', (await host.join(plainMega)).state.settings.bidTimer === 10);
-  const blitzState = (await host.join(blitz)).state;
-  check('Blitz 5: 5-player squads, ₹30 Cr and 3-second bids', blitzState.squadLimit === 5 && blitzState.settings.budget === 30 && blitzState.settings.bidTimer === 3);
+  check('Blitz 5 rooms can no longer be created', (await host.req('POST', '/api/rooms', { teamId: 'MI', auctionType: 'blitz5' })).status === 400);
+  check('Blitz 5 rooms made before still have their settings', AUCTION_MODES.blitz5?.budgetLakhs === 3000 && AUCTION_MODES.blitz5.bidTimer === 3);
   await friend.req('POST', `/api/rooms/${sprint}/join`, { teamId: 'CSK' });
   await host.join(sprint);
   check('Sprint 5 starts', (await host.emit('auction:start', { roomId: sprint })).ok);
@@ -155,6 +154,7 @@ try {
   check('quick pool starts', (await host.emit('auction:start', { roomId: quick })).ok);
   await host.waitFor(() => host.state.id === quick && host.state.status === 'active', 3000, 'quick pool active');
   check('quick pool: 3 franchises × 5 + 10 = 25 players', host.state.playerOrder.length === 25 && new Set(host.state.playerOrder).size === 25, String(host.state.playerOrder.length));
+  check('the quick pool is all players with 5+ IPL 2026 matches', host.state.playerOrder.every(index => ipl2026MatchesOf(IPL_PLAYERS[index].id) >= 5));
   check('the pool is fixed once the auction starts', /fixed/.test((await host.emit('settings:update', { roomId: quick, quickPool: false })).error || ''));
   check('the overseas limit is fixed once the auction starts', /fixed/.test((await host.emit('settings:update', { roomId: quick, overseasLimit: 3 })).error || ''));
   check('unsold rounds can still be switched during the auction', (await host.emit('settings:update', { roomId: quick, rotateUnsold: false })).ok);
@@ -199,12 +199,12 @@ try {
   };
   const evenly = (counts) => TIERS.every(tier => counts[tier] >= 3 && counts[tier] <= 5);
   const twoTeams = { franchises: 2, squadLimit: 5, overseasLimit: 2 };
-  const topPool = tierCounts(buildPlayerOrder('sprint5', 20, twoTeams));
+  const topPool = tierCounts(buildPlayerOrder('sprint5', { squads: twoTeams, quickPool: true }));
   check('a top-players pool of 20 is all Elite and Star', topPool.elite + topPool.star === 20, JSON.stringify(topPool));
   let evenDraws = 0;
   let safeDraws = 0;
   for (let draw = 0; draw < 25; draw++) {
-    const order = buildPlayerOrder('sprint5', 20, twoTeams, 'balanced');
+    const order = buildPlayerOrder('sprint5', { squads: twoTeams, quickPool: true, mix: 'balanced' });
     if (evenly(tierCounts(order))) evenDraws++;
     const indians = order.filter(index => !isOverseas(IPL_PLAYERS[index]));
     // 2 squads of 5 with 2 overseas each: 6 Indian places plus half the 4 overseas ones
@@ -213,15 +213,57 @@ try {
   check('a balanced pool of 20 has 3 to 5 players from every rating tier', evenDraws === 25, `${evenDraws}/25 draws`);
   let experiencedDraws = 0;
   for (let draw = 0; draw < 25; draw++) {
-    if (buildPlayerOrder('sprint5', undefined, {}, 'balanced').every(index => iplMatchesOf(IPL_PLAYERS[index].id) >= 7)) experiencedDraws++;
+    if (buildPlayerOrder('sprint5', { mix: 'balanced' }).every(index => iplMatchesOf(IPL_PLAYERS[index].id) >= 7)) experiencedDraws++;
   }
   check('every player in a balanced pool has played at least 7 IPL matches', experiencedDraws === 25, `${experiencedDraws}/25 draws`);
   const ids = new Set(IPL_PLAYERS.map(p => p.id));
   check('IPL match counts are whole numbers for real players', Object.entries(IPL_MATCHES).every(([id, n]) => ids.has(id) && Number.isInteger(n) && n > 0));
   check('IPL match counts look right', iplMatchesOf('virat-kohli') > 250 && iplMatchesOf('jasprit-bumrah') > 120 && iplMatchesOf('no-such-player') === 0);
-  check('a balanced Mega quick pool for 10 teams still fills to 260', buildPlayerOrder('mega', 260, { franchises: 10, squadLimit: 25, overseasLimit: 8 }, 'balanced').length === 260);
+  const megaTeams = (franchises) => ({ franchises, squadLimit: 25, overseasLimit: 8 });
+  check('a balanced Mega quick pool for 10 teams still fills to 260', buildPlayerOrder('mega', { squads: megaTeams(10), quickPool: true, mix: 'balanced' }).length === 260);
   check('a balanced pool still has enough Indians and an Indian keeper per franchise', safeDraws === 25, `${safeDraws}/25 draws`);
-  check('the player mix only changes a shorter pool', buildPlayerOrder('mega', undefined, {}, 'balanced').length === IPL_PLAYERS.length);
+  check('the player mix only changes a shorter pool', buildPlayerOrder('mega', { mix: 'balanced' }).length === IPL_PLAYERS.length);
+
+
+  // Quick pool outside Mega: only this season's regulars, players with 5+ IPL 2026 matches
+  const regular = (index) => ipl2026MatchesOf(IPL_PLAYERS[index].id) >= 5;
+  const regulars = IPL_PLAYERS.filter(p => ipl2026MatchesOf(p.id) >= 5).length;
+  check('IPL 2026 match counts are for real players, 1 to 17 each', Object.entries(IPL_2026_MATCHES).every(([id, n]) => ids.has(id) && Number.isInteger(n) && n >= 1 && n <= 17));
+  check('no one played more IPL 2026 matches than IPL matches', Object.entries(IPL_2026_MATCHES).every(([id, n]) => iplMatchesOf(id) >= n));
+  check('IPL 2026 match counts look right', ipl2026MatchesOf('virat-kohli') >= 10 && ipl2026MatchesOf('auqib-dar') === 5 && ipl2026MatchesOf('no-such-player') === 0 && regulars > 140, String(regulars));
+  const quickCases = [
+    ['sprint5', { franchises: 2, squadLimit: 5, overseasLimit: 2 }],
+    ['sprint11', { franchises: 2, squadLimit: 11, overseasLimit: 4 }],
+    ['sprint11', { franchises: 10, squadLimit: 11, overseasLimit: 4 }],
+  ];
+  let regularDraws = 0;
+  let quickSafeDraws = 0;
+  for (let draw = 0; draw < 10; draw++) {
+    for (const [mode, squads] of quickCases) {
+      for (const mix of PLAYER_MIXES) {
+        const order = buildPlayerOrder(mode, { squads, quickPool: true, mix });
+        const indians = order.filter(index => !isOverseas(IPL_PLAYERS[index]));
+        const overseasPlaces = squads.franchises * Math.min(squads.overseasLimit, squads.squadLimit);
+        const enoughIndians = indians.length >= squads.franchises * squads.squadLimit - overseasPlaces + Math.ceil(overseasPlaces / 2);
+        const keepers = indians.filter(index => IPL_PLAYERS[index].role === 'Wicket-Keeper').length >= squads.franchises;
+        if (order.length === squads.franchises * squads.squadLimit + 10 && order.every(regular)) regularDraws++;
+        if (enoughIndians && keepers) quickSafeDraws++;
+      }
+    }
+  }
+  const quickDraws = 10 * quickCases.length * PLAYER_MIXES.length;
+  check('every quick pool is drawn only from players with 5+ IPL 2026 matches', regularDraws === quickDraws, `${regularDraws}/${quickDraws} draws`);
+  check('a quick pool still has enough Indians and an Indian keeper per franchise', quickSafeDraws === quickDraws, `${quickSafeDraws}/${quickDraws} draws`);
+  // Mega's 25-player squads need more players than that: its quick pool is drawn as before
+  let megaAsBefore = 0;
+  for (let draw = 0; draw < 10; draw++) {
+    const stars = buildPlayerOrder('mega', { squads: megaTeams(4), quickPool: true });
+    const balanced = buildPlayerOrder('mega', { squads: megaTeams(4), quickPool: true, mix: 'balanced' });
+    if (stars.length === 110 && !stars.every(regular) && balanced.length === 110 && balanced.every(index => iplMatchesOf(IPL_PLAYERS[index].id) >= 7)) megaAsBefore++;
+  }
+  check('a Mega quick pool is drawn as before, not only from the 2026 regulars', megaAsBefore === 10, `${megaAsBefore}/10 draws`);
+  const plainSprint = buildPlayerOrder('sprint11');
+  check('a pool without Quick pool still draws from everyone', !plainSprint.every(regular));
 
   check('rooms draw from the top-rated players by default', (await host.join(plainMega)).state.playerMix === 'stars');
   check('an unknown player mix is refused', (await host.req('POST', '/api/rooms', { teamId: 'GT', auctionType: 'sprint5', playerMix: 'random' })).status === 400);

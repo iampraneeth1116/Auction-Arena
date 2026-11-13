@@ -67,7 +67,6 @@ const MODES = [
   { id: 'mega', squad: 25, overseas: 8, purse: 120, pool: null },
   { id: 'sprint11', squad: 11, overseas: 4, purse: 90, pool: 150 },
   { id: 'sprint5', squad: 5, overseas: 2, purse: 60, pool: 80 },
-  { id: 'blitz5', squad: 5, overseas: 2, purse: 30, pool: 80, timer: 3 },
 ];
 const byMode = (key, format = String) => MODES.map(m => format(m[key])).join(' / ');
 const crores = (value) => `₹${formatCrores(value)} Cr`;
@@ -389,7 +388,7 @@ const Hero = () => (
       <Stat className="px-4 py-3" label="Franchises" value={TEAMS.length} />
       <Stat className="px-4 py-3" label="Auction modes" value={MODES.length} />
       <Stat className="px-4 py-3" label="Players in the full list" value={FULL_LIST} tone="signal" />
-      <Stat className="px-4 py-3" label="Bid timer" value={`${MIN_TIMER}–${MAX_TIMER} s`} hint={`${DEFAULT_TIMER} s by default, 3 s in Blitz`} />
+      <Stat className="px-4 py-3" label="Bid timer" value={`${MIN_TIMER}–${MAX_TIMER} s`} hint={`${DEFAULT_TIMER} s by default`} />
     </Panel>
   </header>
 );
@@ -443,7 +442,7 @@ const Modes = () => (
   <Section
     id="modes"
     title="Auction modes"
-    intro="The mode is chosen when the room is created. It sets the squad size, the overseas limit, the purse and how many players go under the hammer. Blitz 5 is the quick one: a smaller purse and only 3 seconds per bid."
+    intro="The mode is chosen when the room is created. It sets the squad size, the overseas limit, the purse and how many players go under the hammer."
   >
     <Panel label="Mode settings">
       <ul className="divide-y divide-white/6 sm:hidden">
@@ -506,10 +505,10 @@ const Modes = () => (
         Players come up set by set, starting with the marquee set. The order inside each set is shuffled for every room.
       </Note>
       <Note icon={Layers} title="Shorter pools" tone="volt">
-        Classic 11, Sprint 5 and Blitz 5 draw a fresh pool for each room at random from the top-rated players (a group half as
+        Classic 11 and Sprint 5 draw a fresh pool for each room at random from the top-rated players (a group half as
         big again as the pool), keeping the mix of roles, so every room gets a different set of stars. With Balanced player
         mix on, the pool is shared equally between the five rating tiers instead, so it isn&rsquo;t nearly all stars, and
-        only players with at least 7 IPL matches are drawn. Either
+        only players with at least 7 IPL matches are drawn (with Quick pool outside Mega, 5 in IPL 2026). Either
         way, every franchise gets an Indian keeper to go after, and there are enough Indians to fill every squad.
       </Note>
       <Note icon={Users} title="Ten franchises" tone="gold">
@@ -522,8 +521,9 @@ const Modes = () => (
       For a shorter auction the host can turn on Quick pool, on the Host screen or in the lobby. Then only one
       squad&rsquo;s worth of players per franchise taking part goes under the hammer, plus 10 spares: four franchises in
       Classic 11 means 4 × 11 + 10 = 54 players, ten franchises in Mega means 260 instead of {FULL_LIST}. The count is
-      made when the host presses Start, and the players are drawn in the same way: from the top, or every tier equally with
-      Balanced player mix.
+      made when the host presses Start. In Classic 11 and Sprint 5 a quick pool only draws this season&rsquo;s
+      regulars, players with at least 5 IPL 2026 matches, from the top or every tier equally with Balanced player mix.
+      Mega&rsquo;s 25-player squads need more players than that, so its quick pool is drawn like any shorter pool.
     </Note>
   </Section>
 );
@@ -703,7 +703,7 @@ const SquadRules = () => (
   >
     <div className="grid gap-3 md:grid-cols-3">
       <Note icon={Users} title="Squad limit">
-        {byMode('squad')} players (Mega / Classic 11 / Sprint 5 / Blitz 5). Once your squad is full you&rsquo;re out of the bidding.
+        {byMode('squad')} players (Mega / Classic 11 / Sprint 5). Once your squad is full you&rsquo;re out of the bidding.
       </Note>
       <Note icon={Plane} title="Overseas quota" tone="gold">
         {byMode('overseas')} players by default. The host can set any number before the start, or no limit at all.

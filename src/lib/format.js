@@ -15,11 +15,13 @@ export const formatCrores = (crores) => (Number(crores) || 0).toFixed(2).replace
 
 // timer: the seconds per bid a new room of this mode starts with
 // squad: squad limit · overseas: overseas players allowed per squad · pool: players auctioned (null = the full list)
+// quickRegulars: a quick pool only draws players with 5+ IPL 2026 matches (the server decides the same way)
+// blitz5 is no longer offered for new rooms; it stays so Blitz rooms made before still show properly
 export const MODE_META = {
   mega: { label: 'Mega Auction', short: 'Mega', blurb: '25-player squads · ₹120 Cr purse · full player list', timer: 10, squad: 25, overseas: 8, pool: null },
-  sprint11: { label: '11-Player Classic', short: 'Classic 11', blurb: '11-player squads · ₹90 Cr purse · 150 players', timer: 10, squad: 11, overseas: 4, pool: 150 },
-  sprint5: { label: '5-Player Sprint', short: 'Sprint 5', blurb: '5-player squads · ₹60 Cr purse · 80 players', timer: 10, squad: 5, overseas: 2, pool: 80 },
-  blitz5: { label: '5-Player Blitz', short: 'Blitz 5', blurb: '5-player squads · ₹30 Cr purse · 3-second bids · 80 players', timer: 3, squad: 5, overseas: 2, pool: 80 },
+  sprint11: { label: '11-Player Classic', short: 'Classic 11', blurb: '11-player squads · ₹90 Cr purse · 150 players', timer: 10, squad: 11, overseas: 4, pool: 150, quickRegulars: true },
+  sprint5: { label: '5-Player Sprint', short: 'Sprint 5', blurb: '5-player squads · ₹60 Cr purse · 80 players', timer: 10, squad: 5, overseas: 2, pool: 80, quickRegulars: true },
+  blitz5: { label: '5-Player Blitz', short: 'Blitz 5', blurb: '5-player squads · ₹30 Cr purse · 3-second bids · 80 players', timer: 3, squad: 5, overseas: 2, pool: 80, quickRegulars: true },
 };
 
 // An overseas limit as large as the squad means there's no limit at all

@@ -34,7 +34,7 @@ import { BID_TIMER_PRESETS, MODE_META, ROLES, ROLE_META, formatPrice, isOverseas
 import { TEAMS } from '../data/teams';
 
 const LABEL = 'font-display text-xs font-semibold uppercase tracking-[0.14em] text-haze';
-const MODES = ['mega', 'sprint11', 'sprint5', 'blitz5'];
+const MODES = ['mega', 'sprint11', 'sprint5'];
 const POLL_MS = 20000;
 const PLAYER_COUNT = `${Math.floor(PLAYERS_BY_ID.size / 100) * 100}+`;
 
@@ -490,7 +490,7 @@ const HostTab = () => {
         </Panel>
 
         <Panel label="Choose a format" bodyClassName="p-3 sm:p-4">
-          <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label="Format">
+          <div className="grid gap-2 md:grid-cols-3" role="group" aria-label="Format">
             {MODES.map(m => <ModeCard key={m} mode={m} selected={m === mode} onSelect={() => setMode(m)} />)}
           </div>
         </Panel>
@@ -543,7 +543,7 @@ const HostTab = () => {
           checked={quickPool}
           onChange={setQuickPool}
           label="Quick pool"
-          description={`Players auctioned = franchises playing × ${squadSize} squad slots + 10 spares. With all ten teams that's ${auctionPoolSize({ auctionType: mode, quickPool: true, franchises: 10, squadLimit: squadSize })}, instead of ${auctionPoolSize({ auctionType: mode, quickPool: false })}.`}
+          description={`Players auctioned = franchises playing × ${squadSize} squad slots + 10 spares${MODE_META[mode].quickRegulars ? ', drawn from players with 5+ IPL 2026 matches' : ''}. With all ten teams that's ${auctionPoolSize({ auctionType: mode, quickPool: true, franchises: 10, squadLimit: squadSize })}, instead of ${auctionPoolSize({ auctionType: mode, quickPool: false })}.`}
         />
         {/* Only a pool shorter than the full list is drawn, so only then does the mix matter */}
         {(quickPool || MODE_META[mode].pool) && (
@@ -551,7 +551,7 @@ const HostTab = () => {
             checked={balanced}
             onChange={setBalanced}
             label="Balanced player mix"
-            description="An equal share of Elite, Star, Solid, Squad and Prospect players, each with at least 7 IPL matches, instead of mostly the top-rated. Applies whenever fewer than the full list go under the hammer."
+            description={`An equal share of Elite, Star, Solid, Squad and Prospect players, each with at least ${quickPool && MODE_META[mode].quickRegulars ? '5 IPL 2026 matches' : '7 IPL matches'}, instead of mostly the top-rated. Applies whenever fewer than the full list go under the hammer.`}
           />
         )}
         <Toggle

@@ -1,18 +1,21 @@
 import { IPL_PLAYERS } from '../src/data/players.js';
 import { TEAMS } from '../src/data/teams.js';
-import { MIN_IPL_MATCHES, iplMatchesOf } from '../src/data/iplMatches.js';
+import { MIN_2026_MATCHES, MIN_IPL_MATCHES, ipl2026MatchesOf, iplMatchesOf } from '../src/data/iplMatches.js';
 import { buildRatings, ratingTier } from '../src/lib/playerRating.js';
 
 // Money is whole lakhs on the server (1 Cr = 100 L) so repeated increments never
 // pick up floating-point drift. The client sends and receives crores.
 // poolSize: how many players go under the hammer (null = the full list)
 // bidTimer: seconds per bid when the room is created (the host can change it)
+// quickRegulars: a quick pool only draws this season's regulars (MIN_2026_MATCHES or more
+// IPL 2026 matches). Not Mega: 25-player squads need more players than that.
 export const AUCTION_MODES = {
   mega: { squadLimit: 25, overseasLimit: 8, budgetLakhs: 12000, poolSize: null },
-  sprint11: { squadLimit: 11, overseasLimit: 4, budgetLakhs: 9000, poolSize: 150 },
-  sprint5: { squadLimit: 5, overseasLimit: 2, budgetLakhs: 6000, poolSize: 80 },
-  // A quick game: a small purse keeps prices down and every bid has only 3 seconds
-  blitz5: { squadLimit: 5, overseasLimit: 2, budgetLakhs: 3000, poolSize: 80, bidTimer: 3 },
+  sprint11: { squadLimit: 11, overseasLimit: 4, budgetLakhs: 9000, poolSize: 150, quickRegulars: true },
+  sprint5: { squadLimit: 5, overseasLimit: 2, budgetLakhs: 6000, poolSize: 80, quickRegulars: true },
+  // No longer offered for new rooms (a ₹30 Cr purse, 3-second bids). Kept so Blitz rooms
+  // made before still load, run and show in history.
+  blitz5: { squadLimit: 5, overseasLimit: 2, budgetLakhs: 3000, poolSize: 80, bidTimer: 3, quickRegulars: true },
 };
 
 export const DEFAULT_BID_TIMER = 10;
@@ -109,31 +112,34 @@ function pickByRole(candidates, places, chosen) {
 
 // Swaps the weakest picks that canGo (marquee players last) for the best players
 // left out who are wanted, keeping roles level where it can, until at least min
-// are in the pool. balanced: each swap takes the wanted player rated closest to the
-// one going instead, preferring players with IPL experience, so the pool stays balanced.
-function ensureAtLeast(chosen, min, wanted, canGo, balanced = false) {
+// are in the pool. Players the pool is drawn from (eligible) come in first and go
+// out last. balanced: each swap takes the wanted player rated closest to the one
+// going instead, so the pool stays balanced.
+function ensureAtLeast(chosen, min, wanted, canGo, { eligible, balanced }) {
   let have = [...chosen].filter(index => wanted(IPL_PLAYERS[index])).length;
   if (have >= min) return;
   const scored = (index) => ({ index, score: RATINGS.get(IPL_PLAYERS[index].id) + Math.random() * 25 });
   const marqueeLast = (index) => (isMarquee(IPL_PLAYERS[index]) ? 1 : 0);
+  const outside = (index) => (eligible(IPL_PLAYERS[index]) ? 0 : 1);
   const removable = [...chosen]
     .filter(index => canGo(IPL_PLAYERS[index]))
     .map(scored)
-    .sort((a, b) => marqueeLast(a.index) - marqueeLast(b.index) || a.score - b.score);
+    .sort((a, b) => outside(b.index) - outside(a.index) || marqueeLast(a.index) - marqueeLast(b.index) || a.score - b.score);
   const available = IPL_PLAYERS
     .map((player, index) => index)
     .filter(index => !chosen.has(index) && wanted(IPL_PLAYERS[index]))
     .map(scored)
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => outside(a.index) - outside(b.index) || b.score - a.score);
   const ratingOf = (index) => RATINGS.get(IPL_PLAYERS[index].id);
   for (const { index: out } of removable) {
     if (have >= min || available.length === 0) break;
     if (balanced) {
-      const unproven = (index) => (experienced(IPL_PLAYERS[index]) ? 0 : 1);
-      available.sort((a, b) => unproven(a.index) - unproven(b.index)
+      available.sort((a, b) => outside(a.index) - outside(b.index)
         || Math.abs(ratingOf(a.index) - ratingOf(out)) - Math.abs(ratingOf(b.index) - ratingOf(out)));
     }
-    const sameRole = available.findIndex(({ index }) => IPL_PLAYERS[index].role === IPL_PLAYERS[out].role);
+    // The same role if possible, but never someone the pool isn't drawn from over someone it is
+    const sameRole = available.findIndex(({ index }) =>
+      outside(index) === outside(available[0].index) && IPL_PLAYERS[index].role === IPL_PLAYERS[out].role);
     const [{ index: replacement }] = available.splice(Math.max(0, sameRole), 1);
     chosen.delete(out);
     chosen.add(replacement);
@@ -148,22 +154,23 @@ const TOP_GROUP = 1.5;
 // "balanced", an equal share from every rating tier
 export const PLAYER_MIXES = ['stars', 'balanced'];
 
-// Only players who've played at least MIN_IPL_MATCHES IPL matches go into a balanced pool
+// Who a shorter pool is drawn from. A quick pool outside Mega: this season's regulars,
+// players with at least MIN_2026_MATCHES in IPL 2026. Otherwise a balanced pool: players
+// with at least MIN_IPL_MATCHES IPL matches, and a top-players pool: anyone.
+const playedThisSeason = (player) => ipl2026MatchesOf(player.id) >= MIN_2026_MATCHES;
 const experienced = (player) => iplMatchesOf(player.id) >= MIN_IPL_MATCHES;
+const anyone = () => true;
 
 // Balanced: the places are shared equally between the rating tiers (Elite, Star, Solid,
-// Squad player, Prospect), each tier's share drawn at random in its own mix of roles, from
-// players with IPL experience. Smaller tiers go first, so a tier with too few players hands
-// its spare places on. A pool bigger than every experienced player put together (Mega's
-// quick pool with all ten teams) is topped up with the most experienced of the rest.
-function pickBalanced(poolSize, chosen) {
+// Squad player, Prospect), each tier's share drawn at random in its own mix of roles.
+// Smaller tiers go first, so a tier with too few players hands its spare places on.
+function pickBalanced(candidates, poolSize, chosen) {
   const tiers = new Map();
-  IPL_PLAYERS.forEach((player, index) => {
-    if (!experienced(player)) return;
-    const tier = ratingTier(RATINGS.get(player.id));
+  for (const index of candidates) {
+    const tier = ratingTier(RATINGS.get(IPL_PLAYERS[index].id));
     if (!tiers.has(tier)) tiers.set(tier, []);
     tiers.get(tier).push(index);
-  });
+  }
   const bySize = [...tiers.values()].sort((a, b) => a.length - b.length);
   let placesLeft = poolSize;
   bySize.forEach((indices, done) => {
@@ -171,6 +178,11 @@ function pickBalanced(poolSize, chosen) {
     pickByRole(indices, share, chosen);
     placesLeft -= share;
   });
+}
+
+// A pool bigger than everyone it's drawn from (Mega's balanced quick pool with all ten
+// teams) is topped up with the most experienced of the rest
+function topUp(poolSize, chosen) {
   const mostExperienced = IPL_PLAYERS
     .map((player, index) => index)
     .filter(index => !chosen.has(index))
@@ -190,36 +202,40 @@ function pickBalanced(poolSize, chosen) {
 // up or find a keeper. So every franchise gets an Indian keeper to go after, and
 // there are enough Indians for every squad's non-overseas places plus half its
 // overseas places, as not every squad uses them all.
-function pickPool(poolSize, { franchises, minIndians, mix }) {
+function pickPool(poolSize, { franchises, minIndians, mix, regularsOnly }) {
   const chosen = new Set();
   const balanced = mix === 'balanced';
+  const eligible = regularsOnly ? playedThisSeason : balanced ? experienced : anyone;
+  const candidates = IPL_PLAYERS.map((player, index) => index).filter(index => eligible(IPL_PLAYERS[index]));
   if (balanced) {
-    pickBalanced(poolSize, chosen);
+    pickBalanced(candidates, poolSize, chosen);
   } else {
     // Highest rated first, with ties in a random order so the cut-off isn't always the same players
-    const ranked = shuffle(IPL_PLAYERS.map((player, index) => index))
+    const ranked = shuffle(candidates)
       .sort((a, b) => RATINGS.get(IPL_PLAYERS[b].id) - RATINGS.get(IPL_PLAYERS[a].id));
     pickByRole(ranked.slice(0, Math.ceil(poolSize * TOP_GROUP)), poolSize, chosen);
   }
+  topUp(poolSize, chosen);
   const indian = (player) => !isOverseas(player);
-  ensureAtLeast(chosen, franchises, p => indian(p) && p.role === 'Wicket-Keeper', p => p.role === 'Batsman', balanced);
-  ensureAtLeast(chosen, minIndians, indian, isOverseas, balanced);
+  ensureAtLeast(chosen, franchises, p => indian(p) && p.role === 'Wicket-Keeper', p => p.role === 'Batsman', { eligible, balanced });
+  ensureAtLeast(chosen, minIndians, indian, isOverseas, { eligible, balanced });
   return chosen;
 }
 
 // Sets run in the order they appear in players.js; players shuffle within a set.
-// poolSize overrides the mode's own pool (used by the quick pool option). squads
-// describes the room, so a smaller pool still has enough Indians for every squad;
-// it defaults to all ten franchises under the mode's own limits. mix: one of
-// PLAYER_MIXES, for a pool shorter than the full list.
-export function buildPlayerOrder(auctionType = 'mega', poolSize = undefined, squads = {}, mix = 'stars') {
+// squads describes the room, so a smaller pool still has enough Indians for every squad;
+// it defaults to all ten franchises under the mode's own limits. quickPool: one squad's
+// worth of players per franchise plus spares instead of the mode's own pool (only this
+// season's regulars, outside Mega). mix: one of PLAYER_MIXES, for a pool shorter than the full list.
+export function buildPlayerOrder(auctionType = 'mega', { squads = {}, quickPool = false, mix = 'stars' } = {}) {
   const mode = AUCTION_MODES[auctionType] ?? AUCTION_MODES.mega;
-  const size = poolSize ?? mode.poolSize;
   const { franchises = TEAMS.length, squadLimit = mode.squadLimit, overseasLimit = mode.overseasLimit } = squads;
+  const size = quickPool ? quickPoolSize(franchises, squadLimit) : mode.poolSize;
+  const regularsOnly = quickPool && Boolean(mode.quickRegulars);
   const overseasPlaces = franchises * Math.min(overseasLimit, squadLimit);
   const indianPlaces = franchises * squadLimit - overseasPlaces;
   const minIndians = Math.min(size ?? 0, indianPlaces + Math.ceil(overseasPlaces / 2));
-  const pool = size && size < IPL_PLAYERS.length ? pickPool(size, { franchises, minIndians, mix }) : null;
+  const pool = size && size < IPL_PLAYERS.length ? pickPool(size, { franchises, minIndians, mix, regularsOnly }) : null;
 
   const indicesBySet = new Map();
   IPL_PLAYERS.forEach((player, index) => {
