@@ -7,8 +7,9 @@ import * as rooms from './roomManager.js';
 export function createSocketServer(httpServer) {
   // The React app is served from the same origin, so no CORS configuration is needed
   // A ping every half second, so the server always knows when it last heard from each connection
-  // (the host's matters most, see roomManager). One unanswered for 5 s is closed.
-  const io = new Server(httpServer, { serveClient: false, pingInterval: 500, pingTimeout: 5000 });
+  // (the host's matters most, see roomManager). One unanswered for 10 s is closed: a phone that
+  // briefly switches apps or loses signal for a few seconds keeps its connection.
+  const io = new Server(httpServer, { serveClient: false, pingInterval: 500, pingTimeout: 10000 });
   rooms.attachIo(io);
 
   // Authenticate the handshake with the same httpOnly access-token cookie the API uses

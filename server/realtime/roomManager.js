@@ -37,7 +37,17 @@ const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 let io = null;
 export const attachIo = (server) => {
   io = server;
-  setInterval(() => runtimes.forEach(checkHost), HOST_CHECK_MS).unref();
+  let lastCheck = Date.now();
+  let judgeFrom = 0;
+  setInterval(() => {
+    const now = Date.now();
+    // A late check means the server itself was held up (busy, or throttled on a small plan): it
+    // pinged nobody meanwhile and hasn't read the replies waiting for it yet. So the host gets
+    // a fresh HOST_SILENCE_MS before being judged quiet, instead of a pause for nothing.
+    if (now - lastCheck > HOST_CHECK_MS * 2) judgeFrom = now + HOST_SILENCE_MS;
+    lastCheck = now;
+    if (now >= judgeFrom) runtimes.forEach(checkHost);
+  }, HOST_CHECK_MS).unref();
 };
 export const roomChannel = (roomId) => `room:${roomId}`;
 export const userChannel = (userId) => `user:${userId}`;

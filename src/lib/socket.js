@@ -2,12 +2,14 @@ import { io } from 'socket.io-client';
 import { renewSession } from './api';
 
 // While connected, the app asks the server for the time every few seconds, which keeps countdowns
-// in step with the server. The server also pings twice a second, so a connection that has heard
-// nothing for LINK_SILENCE_MS has died without closing (common on phones): the app reconnects
-// instead of freezing on old state.
+// in step with the server. The server also pings twice a second. After QUIET_MS without a word,
+// the player is shown the link is down and can't bid, but the connection is kept: a slow network
+// or a busy server usually catches up a moment later, with everything in order. Only a connection
+// silent for DEAD_LINK_MS has died without closing (common on phones), and is replaced.
 const HEARTBEAT_MS = 3000;
 const PROBE_TIMEOUT_MS = 3500;
-const LINK_SILENCE_MS = 2500;
+const QUIET_MS = 2500;
+const DEAD_LINK_MS = 7000;
 const LINK_CHECK_MS = 500;
 const CLOCK_SAMPLES = 20;
 
@@ -46,12 +48,13 @@ function recordClockSample(sentAt, serverTime) {
   clockOffset = clockSamples.reduce((best, sample) => (sample.roundTrip < best.roundTrip ? sample : best)).offset;
 }
 
-// Drops a link that has stopped answering. Socket.IO then reconnects, and the room page
-// rejoins and gets the room's current state.
-function dropIfSilent(activeSocket) {
-  if (socket === activeSocket && activeSocket.connected && Date.now() - lastHeardAt >= LINK_SILENCE_MS) {
-    activeSocket.io.engine?.close();
-  }
+// A quiet link shows as reconnecting. A dead one is dropped: Socket.IO then reconnects, and the
+// room page rejoins and gets the room's current state.
+function checkLink(activeSocket) {
+  if (socket !== activeSocket || !activeSocket.connected) return;
+  const silent = Date.now() - lastHeardAt;
+  if (silent >= DEAD_LINK_MS) activeSocket.io.engine?.close();
+  else if (silent >= QUIET_MS) setStatus('reconnecting');
 }
 
 export function getSocket() {
@@ -69,7 +72,11 @@ export function getSocket() {
     reconnectionDelay: 500,
     reconnectionDelayMax: 3000,
   });
-  const heard = () => { lastHeardAt = Date.now(); };
+  const heard = () => {
+    lastHeardAt = Date.now();
+    // A quiet link that has caught up is back, without reconnecting
+    if (socket === created && created.connected && status === 'reconnecting') setStatus('connected');
+  };
   const timers = new Set();
   const later = (fn, ms) => {
     const timer = setTimeout(() => { timers.delete(timer); fn(); }, ms);
@@ -82,7 +89,7 @@ export function getSocket() {
     if (socket !== created || !created.connected) return;
     const sentAt = Date.now();
     created.timeout(PROBE_TIMEOUT_MS).emit('time:sync', {}, (err, res) => {
-      if (err) return dropIfSilent(created);
+      if (err) return checkLink(created);
       heard();
       if (res?.serverTime) recordClockSample(sentAt, res.serverTime);
     });
@@ -121,7 +128,7 @@ export function getSocket() {
     later(probe, 300);
     later(probe, 800);
     heartbeat = setInterval(probe, HEARTBEAT_MS);
-    linkCheck = setInterval(() => dropIfSilent(created), LINK_CHECK_MS);
+    linkCheck = setInterval(() => checkLink(created), LINK_CHECK_MS);
   });
 
   created.on('disconnect', (reason) => {
@@ -188,7 +195,7 @@ export function emitWithAck(event, payload = {}, { timeoutMs = 10000 } = {}) {
   return new Promise((resolve, reject) => {
     activeSocket.timeout(timeoutMs).emit(event, payload, (timeoutError, res) => {
       if (timeoutError) {
-        dropIfSilent(activeSocket);
+        checkLink(activeSocket);
         return reject(new Error('The server did not respond. Check your connection.'));
       }
       if (res?.error) {
