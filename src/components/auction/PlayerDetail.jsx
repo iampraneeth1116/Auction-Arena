@@ -2,10 +2,14 @@ import React from 'react';
 import { Plane, TrendingDown, TrendingUp } from 'lucide-react';
 import PlayerPhoto from '../ui/PlayerPhoto';
 import RatingBadge from '../ui/RatingBadge';
+import Segmented from '../ui/Segmented';
 import Tag from '../ui/Tag';
-import { ratingOf } from '../../lib/catalog';
+import TeamCrest from '../ui/TeamCrest';
+import { useLocalSetting } from '../../hooks/useLocalSetting';
+import { TEAMS_BY_ID, ratingOf } from '../../lib/catalog';
 import { TIER_LABELS, outlookOf, ratingTier } from '../../lib/playerRating';
 import { profileLines } from '../../lib/playerProfile';
+import { season2026Of } from '../../lib/seasonStats';
 import { ROLE_META, formatPrice, formatStat, isOverseas } from '../../lib/format';
 
 const STATS = [
@@ -19,13 +23,46 @@ const STATS = [
 
 const labelClasses = 'font-display text-[11px] font-semibold uppercase tracking-[0.14em] text-haze';
 
-// Everything we know about one player: rating, auction details, playing profile and career numbers.
+const Figure = ({ label, value }) => (
+  <div className="border-l-2 border-ink-600 pl-2">
+    <dt className={labelClasses}>{label}</dt>
+    <dd className="tabular font-display text-lg font-bold leading-tight">{value}</dd>
+  </div>
+);
+
+// This season: the team, then batting and/or bowling (see season2026Of)
+const SeasonNumbers = ({ season }) => (
+  <div className="mt-3 space-y-4">
+    <p className="flex items-center gap-2 text-sm text-mist">
+      <TeamCrest teamId={season.team} size="xs" />
+      <span>
+        <span className="tabular font-semibold text-snow">{season.matches}</span> {season.matches === 1 ? 'match' : 'matches'} for {TEAMS_BY_ID.get(season.team)?.name ?? season.team}
+      </span>
+    </p>
+    {season.sides.length === 0 && <p className="text-sm text-haze">Played, but didn&apos;t bat or bowl.</p>}
+    {season.sides.map(side => (
+      <div key={side.key}>
+        <h5 className={labelClasses}>{side.title}</h5>
+        <dl className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+          {side.stats.map(({ label, value }) => <Figure key={label} label={label} value={value} />)}
+        </dl>
+        <p className="mt-1.5 text-xs text-haze">{side.extra}</p>
+      </div>
+    ))}
+  </div>
+);
+
+// Everything we know about one player: rating, auction details, playing profile and numbers
+// (this IPL season or his T20 career; the choice is remembered on this device).
 // note: an optional line about this player in this auction, e.g. "Lot 14 of 80"
 const PlayerDetail = ({ player, note }) => {
   const rating = ratingOf(player.id);
   const profile = profileLines(player);
   const outlook = outlookOf(player.id);
   const stats = player.stats || {};
+  const season = season2026Of(player);
+  const [numbers, setNumbers] = useLocalSetting('player.numbers', 'season');
+  const showSeason = Boolean(season) && numbers === 'season';
 
   return (
     <div className="space-y-5">
@@ -89,15 +126,27 @@ const PlayerDetail = ({ player, note }) => {
       </section>
 
       <section>
-        <h4 className={labelClasses}>Career numbers</h4>
-        <dl className="mt-2 grid grid-cols-3 gap-x-4 gap-y-3">
-          {STATS.map(([key, label]) => (
-            <div key={key} className="border-l-2 border-ink-600 pl-2">
-              <dt className={labelClasses}>{label}</dt>
-              <dd className="tabular font-display text-lg font-bold leading-tight">{formatStat(stats[key])}</dd>
-            </div>
-          ))}
-        </dl>
+        {season ? (
+          <Segmented
+            size="sm"
+            className="-ml-2.5 border-b border-white/6"
+            value={showSeason ? 'season' : 'career'}
+            onChange={setNumbers}
+            options={[{ id: 'season', label: 'IPL 2026' }, { id: 'career', label: 'T20 career' }]}
+          />
+        ) : (
+          <h4 className={labelClasses}>T20 career</h4>
+        )}
+        {showSeason ? (
+          <SeasonNumbers season={season} />
+        ) : (
+          <>
+            <dl className="mt-3 grid grid-cols-3 gap-x-4 gap-y-3">
+              {STATS.map(([key, label]) => <Figure key={key} label={label} value={formatStat(stats[key])} />)}
+            </dl>
+            {!season && <p className="mt-3 text-xs text-haze">Didn&apos;t play in IPL 2026.</p>}
+          </>
+        )}
       </section>
     </div>
   );

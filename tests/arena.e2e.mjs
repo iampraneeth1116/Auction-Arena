@@ -13,6 +13,9 @@ import { nextBid } from '../src/lib/format.js';
 import { PLAYER_PROFILES } from '../src/data/playerProfiles.js';
 import { PLAYER_OUTLOOK } from '../src/data/playerOutlook.js';
 import { IPL_2026_MATCHES, IPL_MATCHES, ipl2026MatchesOf, iplMatchesOf } from '../src/data/iplMatches.js';
+import { IPL_2026_STATS } from '../src/data/ipl2026Stats.js';
+import { TEAMS } from '../src/data/teams.js';
+import { season2026Of } from '../src/lib/seasonStats.js';
 import { buildRatings, ratingTier } from '../src/lib/playerRating.js';
 
 const PLAYERS = new Map(IPL_PLAYERS.map(p => [p.id, p]));
@@ -264,6 +267,32 @@ try {
   check('a Mega quick pool is drawn as before, not only from the 2026 regulars', megaAsBefore === 10, `${megaAsBefore}/10 draws`);
   const plainSprint = buildPlayerOrder('sprint11');
   check('a pool without Quick pool still draws from everyone', !plainSprint.every(regular));
+
+  // IPL 2026 numbers on the player cards
+  const teamIds = new Set(TEAMS.map(t => t.id));
+  check('IPL 2026 numbers cover exactly the players who played in it', Object.keys(IPL_2026_STATS).sort().join() === Object.keys(IPL_2026_MATCHES).sort().join());
+  const believable = ([id, { team, bat, bowl }]) => teamIds.has(team) && (bat || bowl) &&
+    (!bat || (bat.inns >= 1 && bat.inns <= ipl2026MatchesOf(id) && bat.notOuts <= bat.inns && bat.hs <= bat.runs &&
+      bat.fifties + bat.hundreds <= bat.inns && bat.sixes * 6 <= bat.runs)) &&
+    (!bowl || (bowl.balls > 0 && bowl.bestWickets <= bowl.wickets && bowl.bestRuns <= bowl.runs && bowl.wickets <= bowl.balls));
+  check('IPL 2026 numbers add up for every player', Object.entries(IPL_2026_STATS).every(believable),
+    Object.entries(IPL_2026_STATS).filter(entry => !believable(entry)).map(([id]) => id).join(', '));
+  const vaibhav = IPL_2026_STATS['vaibhav-sooryavanshi'].bat;
+  const overton = IPL_2026_STATS['jamie-overton'].bowl;
+  check('IPL 2026 numbers match the published ones', vaibhav.runs === 776 && vaibhav.sixes === 72 && (vaibhav.runs / vaibhav.balls * 100).toFixed(1) === '237.3' &&
+    IPL_2026_STATS['abhishek-sharma'].bat.hs === 135 && IPL_2026_STATS['abhishek-sharma'].bat.hsNotOut &&
+    overton.wickets === 14 && (overton.runs / overton.balls * 6).toFixed(2) === '8.89' && IPL_2026_STATS['krunal-pandya'].bat.runs === 226);
+  const byId = (id) => IPL_PLAYERS.find(p => p.id === id);
+  const sidesOf = (id) => season2026Of(byId(id)).sides.map(side => side.key).join();
+  check("a bowler's few runs and a batter's odd over stay hidden", sidesOf('jasprit-bumrah') === 'bowl' && sidesOf('tim-david') === 'bat');
+  check('a player who batted and bowled shows both, his own side first', sidesOf('krunal-pandya') === 'bat,bowl' && sidesOf('kagiso-rabada') === 'bowl,bat');
+  check('every IPL 2026 player shows some numbers, and anyone else none',
+    Object.keys(IPL_2026_STATS).every(id => season2026Of(byId(id)).sides.length > 0) && season2026Of(IPL_PLAYERS.find(p => !ipl2026MatchesOf(p.id))) === null);
+  const krunal = season2026Of(byId('krunal-pandya'));
+  check('IPL 2026 numbers are shown the cricket way', krunal.team === 'RCB' && krunal.matches === 16 &&
+    krunal.sides[1].stats.map(s => s.value).join() === '14,8.42,30.4,2/16' && krunal.sides[1].extra === '50.3 overs' &&
+    krunal.sides[0].stats.map(s => s.value).join() === '226,145.8,37.7,73' && krunal.sides[0].extra === '9 innings · 1 fifty · 11 sixes',
+    JSON.stringify(krunal.sides.map(s => [s.stats.map(x => x.value).join(), s.extra])));
 
   check('rooms draw from the top-rated players by default', (await host.join(plainMega)).state.playerMix === 'stars');
   check('an unknown player mix is refused', (await host.req('POST', '/api/rooms', { teamId: 'GT', auctionType: 'sprint5', playerMix: 'random' })).status === 400);

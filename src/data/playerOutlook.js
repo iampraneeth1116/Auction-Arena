@@ -18,7 +18,7 @@ export const PLAYER_OUTLOOK = {
   "jamie-overton": { change: 15, note: "IPL 2026: 14 wkts in 10 matches, econ 8.89, plus 136 runs at SR 158; T20 World Cup: 9 wkts at econ 7.5" }, // Jamie Overton
   "praful-hinge": { change: 14, note: "IPL 2026: 14 wkts in only 7 matches (4/34 on debut), though econ 11.73" }, // Praful Hinge
   "finn-allen": { change: 13, note: "IPL 2026: 349 runs at SR 214 (2nd highest) with a maiden IPL hundred; T20Is 2025-26: 522 runs at SR 205, 33-ball World Cup semi-final hundred" }, // Finn Allen
-  "rasikh-salam": { change: 13, note: "IPL 2026: 19 wkts in 12 matches for champions RCB, econ 9.45, avg 21.3" }, // Rasikh Salam
+  "rasikh-salam": { change: 13, note: "IPL 2026: 19 wkts in 12 matches for champions RCB, econ 9.46, avg 21.3" }, // Rasikh Salam
   "sai-sudharsan": { change: 13, note: "IPL 2026: 722 runs at SR 158 (3rd most); 2025 Orange Cap with 759 runs" }, // Sai Sudharsan
   "anshul-kamboj": { change: 12, note: "IPL 2026: 21 wkts in 14 matches (joint 4th), avg 25.2" }, // Anshul Kamboj
   "donovan-ferreira": { change: 12, note: "IPL 2026: 317 runs in 15 matches at SR 179, avg 35" }, // Donovan Ferreira
@@ -26,7 +26,7 @@ export const PLAYER_OUTLOOK = {
   "nathan-ellis": { change: 12, note: "T20Is 2025-26: 26 wkts in 19 at econ 7.7, World Cup player of the match (4/12)" }, // Nathan Ellis
   "prabhsimran-singh": { change: 12, note: "PBKS top scorer in 2026: 510 runs at SR 169; 2025: 549 runs" }, // Prabhsimran Singh
   "abhishek-sharma": { change: 11, note: "IPL 2026: 563 runs at SR 205 with 135*; 2025: 439 runs at SR 193; T20Is: ICC No. 1 T20I batter: 859 runs at SR 194 (2025), 956 at SR 202 (2026)" }, // Abhishek Sharma
-  "prince-yadav": { change: 11, note: "IPL 2026: 16 wkts in 14 matches, econ 8.82, about 1 below the league" }, // Prince Yadav
+  "prince-yadav": { change: 11, note: "IPL 2026: 16 wkts in 14 matches, econ 8.83, about 1 below the league" }, // Prince Yadav
   "allah-ghazanfar": { change: 10, note: "IPL 2026: 15 wkts in 11 matches, MI's leading wicket-taker" }, // Allah Ghazanfar
   "angkrish-raghuvanshi": { change: 10, note: "KKR's top scorer in 2026: 422 runs at SR 147 before an injury ended his season" }, // Angkrish Raghuvanshi
   "mukul-choudhary": { change: 10, note: "IPL 2026: 170 runs at SR 142 including a match-winning 54* off 27 balls" }, // Mukul Choudhary
@@ -36,7 +36,7 @@ export const PLAYER_OUTLOOK = {
   "cooper-connolly": { change: 8, note: "IPL 2026 debut season: 491 runs at SR 163, avg 44.6, with 107*" }, // Cooper Connolly
   "corbin-bosch": { change: 8, note: "T20 World Cup: 11 wkts at econ 7.6" }, // Corbin Bosch
   "jacob-bethell": { change: 8, note: "England's top World Cup scorer (280 runs, SR 152) with a semi-final hundred" }, // Jacob Bethell
-  "krunal-pandya": { change: 8, note: "IPL 2026: 14 wkts at econ 8.41 plus 226 runs at SR 146; key in two RCB title runs" }, // Krunal Pandya
+  "krunal-pandya": { change: 8, note: "IPL 2026: 14 wkts at econ 8.42 plus 226 runs at SR 146; key in two RCB title runs" }, // Krunal Pandya
   "priyansh-arya": { change: 8, note: "IPL 2026: 364 runs at SR 212; 2025: 475 runs with a hundred" }, // Priyansh Arya
   "ryan-rickelton": { change: 8, note: "IPL 2026: 448 runs at SR 187 with a franchise-record 123*" }, // Ryan Rickelton
   "salil-arora": { change: 8, note: "SRH regular in 2026: 14 matches, 156 runs at SR 159" }, // Salil Arora
@@ -49,7 +49,7 @@ export const PLAYER_OUTLOOK = {
   "sherfane-rutherford": { change: 6, note: "T20Is 2026: 535 runs at avg 67, SR 178" }, // Sherfane Rutherford
   "shivang-kumar": { change: 6, note: "Uncapped SRH all-rounder: 9 wickets in 2026" }, // Shivang Kumar
   "tilak-varma": { change: 6, note: "T20Is 2026: 658 runs at SR 153; now India's T20I vice-captain" }, // Tilak Varma
-  "jason-holder": { change: 5, note: "IPL 2026: 17 wkts in 11 matches at econ 7.56, avg 17; now 34" }, // Jason Holder
+  "jason-holder": { change: 5, note: "IPL 2026: 17 wkts in 11 matches at econ 7.57, avg 17; now 34" }, // Jason Holder
   "kagiso-rabada": { change: 5, note: "IPL 2026 Purple Cap: 29 wkts in 17 matches, avg 21.6" }, // Kagiso Rabada
   "heinrich-klaasen": { change: 4, note: "IPL 2026: 624 runs at SR 160, avg 48 (5th most); 2025: 487 runs with a hundred" }, // Heinrich Klaasen
   "shubman-gill": { change: 2, note: "IPL 2026: 732 runs at SR 163 (2nd most), captained GT to the final; T20Is: dropped from India's World Cup T20I squad; no T20Is in 2026" }, // Shubman Gill

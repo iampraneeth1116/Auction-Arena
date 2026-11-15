@@ -6,6 +6,7 @@ import Tag from '../ui/Tag';
 import { ratingOf } from '../../lib/catalog';
 import { TIER_LABELS, ratingTier } from '../../lib/playerRating';
 import { profileLines } from '../../lib/playerProfile';
+import { season2026Of } from '../../lib/seasonStats';
 import { ROLE_META, formatPrice, formatStat, isOverseas } from '../../lib/format';
 
 // Bowlers lead with bowling numbers, everyone else with batting
@@ -24,7 +25,25 @@ function statLine(player) {
     .slice(0, 4);
 }
 
-// The player "on the block": photo, name, role, Arena Rating and key numbers
+// This IPL season in one line, under the career numbers: no switch here, there's no time
+// for one while the bidding clock runs (the full card has the IPL 2026 numbers). Phones
+// skip the match count to keep the line short.
+const SeasonLine = ({ player }) => {
+  const season = season2026Of(player);
+  return (
+    <p className="tabular mt-2 text-xs text-mist sm:mt-3 sm:text-sm">
+      <span className="font-display font-semibold uppercase tracking-[0.14em] text-signal">IPL 2026</span>
+      {season ? (
+        <>
+          <span className="max-sm:hidden"> · {season.matches} {season.matches === 1 ? 'match' : 'matches'}</span>
+          {season.sides.map(side => <span key={side.key}> · {side.short}</span>)}
+        </>
+      ) : <span className="text-haze"> · Didn&apos;t play</span>}
+    </p>
+  );
+};
+
+// The player "on the block": photo, name, role, Arena Rating, key career numbers and this season
 const LotCard = ({ player, lot, lots }) => {
   const rating = ratingOf(player.id);
   return (
@@ -65,6 +84,7 @@ const LotCard = ({ player, lot, lots }) => {
             </div>
           ))}
         </dl>
+        <SeasonLine player={player} />
       </div>
     </div>
   );

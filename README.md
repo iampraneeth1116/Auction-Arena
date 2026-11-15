@@ -26,7 +26,7 @@ Claim a franchise, bid against each other on 500+ real players, let bots fill th
 - **Server-run bidding** — the Node server owns the clock, checks every bid (purse, squad size, overseas quota) and sells players, so nobody can cheat from the browser and the auction carries on if the host closes their tab or the server restarts.
 - **Three formats** — Mega (25-player squads, ₹120 Cr, the full list), Classic 11 (11, ₹90 Cr, a 150-player pool) and Sprint 5 (5, ₹60 Cr, an 80-player pool). Any mode can use a **quick pool**: only (franchises taking part × squad size) + 10 players go under the hammer, in Classic 11 and Sprint 5 drawn only from this season's regulars (at least 5 IPL 2026 matches). **Unsold players come back** in later rounds until a round sells nobody, and the host can set **any overseas limit**, or none. Shorter pools are drawn at random from the top-rated players, or with **Balanced player mix** an equal share from every rating tier (Elite, Star, Solid, Squad, Prospect) of players with at least 7 IPL matches (counted from [Cricsheet](https://cricsheet.org)'s scorecards), always with an Indian keeper for every franchise and enough Indians for every squad, so each room gets a different set of players.
 - **Bots** — fill empty franchises with AI managers. Each plans its squad by role and by the jobs a T20 XI needs, values players by rating and the purse it has left, and has its own leaning. Friends can take a franchise over from its bot before the start.
-- **Broadcast-style room** — the player on the block with role-aware stats, a segmented countdown, a bid trail, the next four lots (tap one for its full player card, or the host can hide them so every lot is a surprise), a SOLD moment in the buyer's colours with their anthem, and a running ticker of sales.
+- **Broadcast-style room** — the player on the block with role-aware stats and a line on their IPL 2026 season, a segmented countdown, a bid trail, the next four lots (tap one for its full player card, or the host can hide them so every lot is a surprise), a SOLD moment in the buyer's colours with their anthem, and a running ticker of sales.
 - **Bidding help** — a max-bid hint that keeps enough purse to fill your squad, live purse/squad/overseas read-outs, an "outbid" alert, and the **B** key to bid.
 - **Voice auctioneer** — announces each lot, every raise and the hammer; voice, pace and pitch are saved per device.
 
@@ -38,6 +38,7 @@ Claim a franchise, bid against each other on 500+ real players, let bots fill th
 
 **After the hammer**
 - **Arena Rating** — every player gets a 1–99 rating. Their auction tier (marquee, Set 1 … uncapped) sets the band and their T20 career places them inside it, compared with others in the same role, so the best bowler rates as highly as the best batter. A curated next-IPL outlook (`src/data/playerOutlook.js`) then moves about a hundred players up or down for recent IPL and T20I form, retirements, injuries and bans, and their player card shows why.
+- **IPL 2026 numbers** — every player card can switch between the player's T20 career and their IPL 2026 season: matches and team, then batting (runs, strike rate, average, best score) and bowling (wickets, economy, average, best figures). They're worked out from Cricsheet's ball-by-ball data for all 74 matches (`src/data/ipl2026Stats.js`). An all-rounder shows both. A side only shows if there's enough of it to mean something (30 balls faced, 6 overs bowled), except the player's own side, so a bowler's few runs or a batter's odd over stay hidden.
 - **Arena Strength** — every squad is scored on the best legal playing XI it can field (an empty place counts as zero) and its depth. The XI's combination counts too: a keeper, openers and a finisher, a left/right mix and an anchor up top, power hitters, pace and spin, and powerplay and death bowling, using a playing profile for each player.
 - **AI power rankings** — an AI analyst (Groq) previews how each franchise would do in the next IPL, grading XI quality, balance, depth and value. The final score is half the AI's view and half Arena Strength, and an unfinished squad loses points either way.
 - **Your XI and batting order** — after the auction, each manager can pick their playing XI from their squad and drag it into their batting order (it starts from the best XI, openers first). The whole room sees it on the squad cards and posters; Arena Strength still judges the best XI.
@@ -198,7 +199,7 @@ auction-arena/
 │   │   └── fantasy/           # Fantasy XI picker and leaderboard
 │   ├── hooks/                 # useAuth, useAuction, voice auctioneer, room sounds, local settings
 │   ├── lib/                   # API and socket clients, Arena Rating, best-XI judging, batting orders, formatting, image sharing
-│   └── data/                  # Players, playing profiles, next-IPL outlook and teams
+│   └── data/                  # Players, playing profiles, next-IPL outlook, IPL match counts and 2026 numbers, teams
 ├── tests/                     # End-to-end tests (npm test)
 └── .github/workflows/         # CI, and the daily fantasy update
 ```
