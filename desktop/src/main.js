@@ -1,9 +1,10 @@
 // The Auction Arena desktop app: the live site in its own window. The pages, the API and
 // the live rooms all stay on the server, so every deploy reaches the app at once.
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { app, BrowserWindow, ipcMain, net, powerMonitor, powerSaveBlocker, session, shell } from 'electron';
 import { notify, removeTray, showTray } from './background.js';
-import { PROTOCOL, linkInArgs, routeFromLink } from './links.js';
+import { PROTOCOL, linkInArgs, routeFromLink, signInCodeFromLink } from './links.js';
 import { buildMenu } from './menu.js';
 import { checkForUpdatesNow, startUpdateChecks } from './updates.js';
 
@@ -210,8 +211,52 @@ function stayInAuction() {
   notify('Still in the auction', `You're still in the room. Use ${whereToLook} to come back, or quit to leave.`, showWindow);
 }
 
+// Google refuses to sign in inside app windows, so "Continue with Google" signs in through the
+// person's own browser. The app keeps a fresh secret (the verifier) and sends the server only
+// its fingerprint (the challenge). The browser comes back with a one-time code on an
+// auctionarena://signed-in link, and the site trades code + secret for a session. Without the
+// secret the code is useless, and a link nobody here asked for is ignored.
+const GOOGLE_SIGN_IN_WAIT_MS = 10 * 60 * 1000; // as long as the server keeps it open
+let googleSignIn = null; // the sign-in waiting for its link: { verifier, finish }
+
+// Resolves with { code, verifier }, or { error } when it can't finish: 'restarted' (asked
+// again), 'expired', 'closed' (the window closed) or 'no-browser'
+function signInWithGoogle() {
+  googleSignIn?.finish({ error: 'restarted' });
+  const verifier = crypto.randomBytes(32).toString('base64url');
+  const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
+  return new Promise((resolve) => {
+    let timer;
+    const pending = {
+      verifier,
+      finish(result) {
+        clearTimeout(timer);
+        if (googleSignIn === pending) googleSignIn = null;
+        resolve(result);
+      },
+    };
+    timer = setTimeout(() => pending.finish({ error: 'expired' }), GOOGLE_SIGN_IN_WAIT_MS);
+    googleSignIn = pending;
+    const start = new URL('/api/auth/google/desktop', START_URL);
+    start.searchParams.set('challenge', challenge);
+    shell.openExternal(start.href).catch(() => pending.finish({ error: 'no-browser' }));
+  });
+}
+
+function finishGoogleSignIn(code) {
+  if (!googleSignIn) return;
+  const { verifier, finish } = googleSignIn;
+  finish({ code, verifier });
+  showWindow();
+}
+
 // An auctionarena:// link was opened: show that room in the window, or open a window on it
 function openLink(link) {
+  const signInCode = signInCodeFromLink(link);
+  if (signInCode) {
+    finishGoogleSignIn(signInCode);
+    return;
+  }
   const route = routeFromLink(link);
   if (!route) return;
   if (!mainWindow) {
@@ -288,6 +333,7 @@ function createWindow() {
     quitting = true;
   });
   mainWindow.on('closed', () => {
+    googleSignIn?.finish({ error: 'closed' });
     mainWindow = null;
     lastPath = '';
     updateScreenAwake();
@@ -316,13 +362,17 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true;
   });
 
-  // A notification from the site (being outbid). Only the site's own page may send one, and
-  // the main process decides whether it's shown.
+  // Only the site's own page, in the app's window, may ask the app for anything
+  const fromSite = (event) => event.senderFrame === mainWindow?.webContents.mainFrame && isAppPage(event.senderFrame.url);
+
+  // A notification from the site (being outbid). The main process decides whether it's shown.
   ipcMain.on('desktop:notify', (event, title, body) => {
-    const fromSite = event.senderFrame === mainWindow?.webContents.mainFrame && isAppPage(event.senderFrame.url);
-    if (!fromSite || typeof title !== 'string' || typeof body !== 'string') return;
+    if (!fromSite(event) || typeof title !== 'string' || typeof body !== 'string') return;
     notifyIfAway(title.slice(0, 100), body.slice(0, 200));
   });
+
+  // "Continue with Google" on the site, which signs in through the browser
+  ipcMain.handle('desktop:google-sign-in', (event) => (fromSite(event) ? signInWithGoogle() : { error: 'refused' }));
 
   // macOS hands invite links to the running app, even while it's still starting up
   app.on('open-url', (event, link) => {

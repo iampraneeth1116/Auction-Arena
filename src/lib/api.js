@@ -31,6 +31,7 @@ const NO_REFRESH_PATHS = new Set([
   '/api/auth/login',
   '/api/auth/register',
   '/api/auth/google',
+  '/api/auth/google/desktop/finish',
   '/api/auth/guest',
   '/api/auth/refresh',
   '/api/auth/logout',

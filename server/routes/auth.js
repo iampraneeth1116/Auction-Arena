@@ -8,6 +8,7 @@ import { config } from '../config.js';
 import { parseBody } from '../validation.js';
 import { REFRESH_COOKIE, clearAuthCookies, endSession, rotateSession, startSession } from '../auth/tokens.js';
 import { isAdminUser, requireAuth } from '../auth/middleware.js';
+import { isToken, issueDesktopCode, redeemDesktopCode, startDesktopSignIn, takeDesktopSignIn } from '../auth/desktopSignIn.js';
 
 const router = Router();
 
@@ -38,6 +39,7 @@ const registerSchema = z.object({
 const loginSchema = z.object({ email: emailSchema, password: z.string().min(1, 'Enter your password').max(128) });
 const guestSchema = z.object({ name: z.string().trim().min(1, 'Enter a name').max(24, 'Name is too long') });
 const googleSchema = z.object({ code: z.string().min(1) });
+const desktopFinishSchema = z.object({ code: z.string().max(64), verifier: z.string().min(43).max(128) });
 
 export const publicUser = (user) => ({
   id: user.id,
@@ -71,24 +73,24 @@ router.post('/login', authLimiter, async (req, res) => {
   res.json({ user: publicUser(user) });
 });
 
-// The popup returns a one-time code; we exchange it and verify Google's ID token
-router.post('/google', authLimiter, async (req, res) => {
-  if (!config.googleClientId || !config.googleClientSecret) {
-    return res.status(503).json({ error: 'Google sign-in is not configured on this server' });
-  }
-  const { code } = parseBody(googleSchema, req.body);
+const googleConfigured = () => Boolean(config.googleClientId && config.googleClientSecret);
 
+const GOOGLE_PROBLEMS = {
+  failed: 'Google sign-in failed. Please try again.',
+  unverified: 'Your Google account email is not verified',
+};
+
+// Verifies Google's ID token and finds or creates the account it belongs to:
+// { user }, or { problem: 'failed' | 'unverified' }
+async function signInGoogleAccount(idToken) {
   let payload;
   try {
-    const { tokens } = await googleClient.getToken(code);
-    const ticket = await googleClient.verifyIdToken({ idToken: tokens.id_token, audience: config.googleClientId });
+    const ticket = await googleClient.verifyIdToken({ idToken, audience: config.googleClientId });
     payload = ticket.getPayload();
   } catch {
-    return res.status(401).json({ error: 'Google sign-in failed. Please try again.' });
+    return { problem: 'failed' };
   }
-  if (!payload?.sub || !payload.email || !payload.email_verified) {
-    return res.status(401).json({ error: 'Your Google account email is not verified' });
-  }
+  if (!payload?.sub || !payload.email || !payload.email_verified) return { problem: 'unverified' };
 
   const email = payload.email.toLowerCase();
   const profile = { name: payload.name || email.split('@')[0], avatarUrl: payload.picture ?? null };
@@ -104,7 +106,77 @@ router.post('/google', authLimiter, async (req, res) => {
       ? await prisma.user.update({ where: { id: existing.id }, data: { ...profile, googleId: payload.sub, passwordHash: null } })
       : await prisma.user.create({ data: { ...profile, email, googleId: payload.sub } });
   }
+  return { user };
+}
 
+// The popup returns a one-time code; we exchange it and verify Google's ID token
+router.post('/google', authLimiter, async (req, res) => {
+  if (!googleConfigured()) {
+    return res.status(503).json({ error: 'Google sign-in is not configured on this server' });
+  }
+  const { code } = parseBody(googleSchema, req.body);
+
+  let tokens;
+  try {
+    ({ tokens } = await googleClient.getToken(code));
+  } catch {
+    return res.status(401).json({ error: GOOGLE_PROBLEMS.failed });
+  }
+  const { user, problem } = await signInGoogleAccount(tokens.id_token);
+  if (problem) return res.status(401).json({ error: GOOGLE_PROBLEMS[problem] });
+
+  await startSession(res, user);
+  res.json({ user: publicUser(user) });
+});
+
+// The desktop app signs in with Google in the person's own browser (see desktopSignIn.js).
+// The first two are opened in that browser, so they always end on the site's return page,
+// which hands a code back to the app or says what went wrong.
+const DESKTOP_RETURN_PAGE = '/desktop-sign-in';
+const backToReturnPage = (res, outcome) =>
+  res.redirect(303, `${DESKTOP_RETURN_PAGE}#${new URLSearchParams(outcome)}`);
+// The OAuth client in Google Cloud must list this exact address as a redirect URI
+const desktopCallbackUrl = (req) => `${req.protocol}://${req.get('host')}${req.baseUrl}/google/desktop/callback`;
+
+router.get('/google/desktop', authLimiter, (req, res) => {
+  if (!googleConfigured()) return backToReturnPage(res, { error: 'unavailable' });
+  if (!isToken(req.query.challenge)) return backToReturnPage(res, { error: 'failed' });
+  const redirectUri = desktopCallbackUrl(req);
+  const state = startDesktopSignIn(req.query.challenge, redirectUri);
+  if (!state) return backToReturnPage(res, { error: 'busy' });
+  res.redirect(303, googleClient.generateAuthUrl({
+    redirect_uri: redirectUri,
+    scope: ['openid', 'email', 'profile'],
+    state,
+    prompt: 'select_account',
+  }));
+});
+
+router.get('/google/desktop/callback', authLimiter, async (req, res) => {
+  const signIn = takeDesktopSignIn(req.query.state);
+  if (!signIn) return backToReturnPage(res, { error: 'expired' });
+  if (req.query.error) return backToReturnPage(res, { error: req.query.error === 'access_denied' ? 'cancelled' : 'failed' });
+  if (typeof req.query.code !== 'string') return backToReturnPage(res, { error: 'failed' });
+
+  let tokens;
+  try {
+    ({ tokens } = await googleClient.getToken({ code: req.query.code, redirect_uri: signIn.redirectUri }));
+  } catch {
+    return backToReturnPage(res, { error: 'failed' });
+  }
+  const { user, problem } = await signInGoogleAccount(tokens.id_token);
+  if (problem) return backToReturnPage(res, { error: problem });
+  backToReturnPage(res, { code: issueDesktopCode(user.id, signIn.challenge) });
+});
+
+// The app trades the code from the return page, plus the secret only it holds, for a session
+router.post('/google/desktop/finish', authLimiter, async (req, res) => {
+  const { code, verifier } = parseBody(desktopFinishSchema, req.body);
+  const userId = redeemDesktopCode(code, verifier);
+  const user = userId && await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    return res.status(401).json({ error: 'That Google sign-in has expired. Press Continue with Google to try again.' });
+  }
   await startSession(res, user);
   res.json({ user: publicUser(user) });
 });

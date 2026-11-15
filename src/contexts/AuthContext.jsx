@@ -8,6 +8,14 @@ import PreShow from '../components/PreShow';
 
 const GOOGLE_ENABLED = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
 
+// Inside the desktop app Google's popup can't work (Google refuses app windows), so the app
+// signs in through the person's own browser and hands back a one-time code and its secret
+const googleInBrowser = () => typeof window.auctionArenaDesktop?.signInWithGoogle === 'function';
+const BROWSER_SIGN_IN_ERRORS = {
+  expired: 'Google sign-in took too long. Please try again.',
+  'no-browser': "Couldn't open your browser for Google sign-in.",
+};
+
 // Google's hook throws during setup without a client ID, so it only mounts when one is
 // configured. It hands its popup opener up through openerRef.
 const GoogleSignIn = ({ openerRef, onCode, onFailure }) => {
@@ -88,7 +96,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const loginWithGoogle = () => new Promise((resolve, reject) => {
+  const loginWithGooglePopup = () => new Promise((resolve, reject) => {
     if (!googleOpener.current) {
       reject(new Error('Google sign-in is not configured.'));
       return;
@@ -96,6 +104,23 @@ export const AuthProvider = ({ children }) => {
     pendingGoogleLogin.current = { resolve, reject };
     googleOpener.current();
   });
+
+  // Resolves with the user, or null when this attempt was replaced by a newer one or the
+  // window closed (nothing to report)
+  const loginWithGoogleInBrowser = async () => {
+    const result = await window.auctionArenaDesktop.signInWithGoogle();
+    if (!result?.code) {
+      if (result?.error === 'restarted' || result?.error === 'closed') return null;
+      throw new Error(BROWSER_SIGN_IN_ERRORS[result?.error] ?? 'Google sign-in failed. Please try again.');
+    }
+    const { user } = await api('/api/auth/google/desktop/finish', {
+      method: 'POST',
+      body: { code: result.code, verifier: result.verifier },
+    });
+    return applySession(user);
+  };
+
+  const loginWithGoogle = () => (googleInBrowser() ? loginWithGoogleInBrowser() : loginWithGooglePopup());
 
   const loginWithEmail = async (email, password) => {
     const { user } = await api('/api/auth/login', { method: 'POST', body: { email, password } });
@@ -131,7 +156,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, googleEnabled: GOOGLE_ENABLED, loginWithGoogle, loginWithEmail, registerWithEmail, loginAsGuest, logout }}>
+    <AuthContext.Provider value={{ user, loading, googleEnabled: GOOGLE_ENABLED, googleInBrowser: googleInBrowser(), loginWithGoogle, loginWithEmail, registerWithEmail, loginAsGuest, logout }}>
       {GOOGLE_ENABLED && (
         <GoogleSignIn openerRef={googleOpener} onCode={handleGoogleCode} onFailure={(err) => settleGoogleLogin('reject', err)} />
       )}

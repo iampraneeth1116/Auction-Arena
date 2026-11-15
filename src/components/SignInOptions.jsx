@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { ArrowLeft, ArrowRight, CircleAlert, Mail, UserRound } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { ArrowLeft, ArrowRight, CircleAlert, ExternalLink, Mail, UserRound } from 'lucide-react';
 import Button from './ui/Button';
 import Field from './ui/Field';
 import GoogleMark from './ui/GoogleMark';
@@ -62,9 +62,12 @@ const GuestSignIn = ({ onBack }) => {
 // Every way in: Google (when configured), email, or a guest name. Used on the home page and on
 // invite links; onViewChange lets the surrounding panel title the step it's on.
 const SignInOptions = ({ onViewChange }) => {
-  const { googleEnabled, loginWithGoogle } = useAuth();
+  const { googleEnabled, googleInBrowser, loginWithGoogle } = useAuth();
   const { toast } = useToast();
   const [view, setView] = useState('choose'); // choose | email | guest
+  // In the desktop app Google sign-in happens in the browser, which can take a while
+  const [waitingForBrowser, setWaitingForBrowser] = useState(false);
+  const googleAttempt = useRef(0);
 
   const show = (next) => {
     setView(next);
@@ -72,10 +75,15 @@ const SignInOptions = ({ onViewChange }) => {
   };
 
   const signInWithGoogle = async () => {
+    const attempt = ++googleAttempt.current;
+    setWaitingForBrowser(googleInBrowser);
     try {
       await loginWithGoogle();
     } catch (err) {
       toast({ message: err.message || 'Google sign-in failed. Please try again.', tone: 'error' });
+    } finally {
+      // Pressing the button again starts a new attempt, which keeps the note up
+      if (attempt === googleAttempt.current) setWaitingForBrowser(false);
     }
   };
 
@@ -85,6 +93,15 @@ const SignInOptions = ({ onViewChange }) => {
     <div className="space-y-2.5">
       {googleEnabled && (
         <Button size="lg" block icon={GoogleMark} onClick={signInWithGoogle}>Continue with Google</Button>
+      )}
+      {waitingForBrowser && (
+        <p role="status" className="flex gap-2 rounded-md border border-signal/25 bg-signal/8 px-3 py-2.5 text-xs leading-relaxed text-mist">
+          <ExternalLink size={14} className="mt-0.5 shrink-0 text-signal" aria-hidden />
+          <span>
+            Your browser has opened Google sign-in. Finish there, allow it to open Auction Arena, and you&rsquo;ll be
+            signed in here. Closed it? Press Continue with Google again.
+          </span>
+        </p>
       )}
       <Button variant={googleEnabled ? 'outline' : 'primary'} size="lg" block icon={Mail} onClick={() => show('email')}>
         Continue with email
