@@ -153,20 +153,6 @@ jobs:
           npm ci
           npm run db:deploy
           npm run build
-      - name: Start the test server (Linux)
-        if: ${{ !cancelled() && runner.os == 'Linux' }}
-        run: |
-          nohup node server/index.js > "$SMOKE_OUT/server.log" 2>&1 &
-          for _ in $(seq 1 60); do curl -sf "http://localhost:$PORT/api/health" && break; sleep 1; done
-      - name: Start the test server (Windows)
-        if: ${{ !cancelled() && runner.os == 'Windows' }}
-        shell: pwsh
-        run: |
-          Start-Process -FilePath node -ArgumentList 'server/index.js' -WindowStyle Hidden `
-            -RedirectStandardOutput "$env:SMOKE_OUT\server.log" -RedirectStandardError "$env:SMOKE_OUT\server-errors.log"
-          for ($i = 0; $i -lt 60; $i++) {
-            try { (Invoke-WebRequest "http://localhost:$env:PORT/api/health" -UseBasicParsing).Content; break } catch { Start-Sleep 1 }
-          }
       - name: Desktop app from source
         if: ${{ !cancelled() }}
         shell: bash
@@ -185,7 +171,11 @@ jobs:
       - name: Quick auction
         if: ${{ !cancelled() }}
         shell: bash
-        run: node .github/smoke/desktop-smoke.mjs auction "$ELECTRON" desktop "http://localhost:$PORT"
+        run: |
+          # Started in this step: Windows ends a step's background processes when the step does
+          node server/index.js > "$SMOKE_OUT/server.log" 2>&1 &
+          for _ in $(seq 1 60); do curl -sf "http://localhost:$PORT/api/health" > /dev/null && break; sleep 1; done
+          node .github/smoke/desktop-smoke.mjs auction "$ELECTRON" desktop "http://localhost:$PORT"
 
       # ─── Uninstall ───
       - name: Uninstall (Linux)
