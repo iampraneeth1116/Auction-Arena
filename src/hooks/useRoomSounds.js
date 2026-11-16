@@ -18,13 +18,16 @@ export function useRoomSounds({ live, timeLeft }) {
   const player = useRef(null);
   const lastBeep = useRef(null);
 
-  // Browsers only allow sound after the first tap or click
+  // Sound starts as soon as it's allowed: straight away in the desktop app, and in a browser once
+  // this visit has had a click (Start auction in the lobby counts, it's the same page). Otherwise
+  // browsers wait for the first tap or key press in the room.
   useEffect(() => {
     const unlock = () => {
       audioCtx.current ??= new (window.AudioContext || window.webkitAudioContext)();
       player.current ??= new Audio();
-      audioCtx.current.resume?.();
+      audioCtx.current.resume?.()?.catch?.(() => {});
     };
+    if (window.auctionArenaDesktop || navigator.userActivation?.hasBeenActive) unlock();
     window.addEventListener('pointerdown', unlock, { once: true });
     window.addEventListener('keydown', unlock, { once: true });
     return () => {
@@ -37,7 +40,8 @@ export function useRoomSounds({ live, timeLeft }) {
 
   const beep = useCallback((freq = 520, duration = 0.09, volume = 0.08) => {
     const ctx = audioCtx.current;
-    if (!effects || !ctx) return;
+    // A paused context would save the beeps up and play them all at the first click
+    if (!effects || ctx?.state !== 'running') return;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = 'triangle';

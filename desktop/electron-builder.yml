@@ -37,6 +37,8 @@ win:
 nsis:
   oneClick: true
   perMachine: false
+  # Registers auctionarena:// links at install and removes them at uninstall
+  include: build/installer.nsh
 
 linux:
   target: [AppImage, deb]
