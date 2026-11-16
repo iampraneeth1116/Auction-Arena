@@ -17,19 +17,29 @@ export function priceForSpeech(crores) {
 }
 
 // Natural-sounding English voices first; Indian English voices are preferred
-const PREFERRED = ['rishi', 'neerja', 'heera', 'ravi', 'google uk english male', 'daniel', 'google us english', 'samantha', 'david'];
+const PREFERRED = [
+  'rishi', 'neerja', 'heera', 'ravi', 'prabhat', 'google uk english male', 'daniel', 'google us english',
+  'samantha', 'karen', 'moira', 'david', 'zira',
+];
+
+// macOS also offers joke voices (Bad News, Bubbles, Zarvox…) and old robotic ones (Fred, the
+// Eloquence voices Eddy, Flo, Grandma…): no auctioneer sounds like that
+const NOVELTY = /^(albert|bad news|bahh|bells|boing|bubbles|cellos|deranged|good news|hysterical|jester|organ|superstar|trinoids|whisper|wobble|zarvox|fred|junior|kathy|ralph|eddy|flo|grandma|grandpa|reed|rocko|sandy|shelley)(\s|\(|$)/i;
+
+const MAX_VOICES = 10;
 
 function pickVoices() {
   const english = window.speechSynthesis.getVoices().filter(v => v.lang.startsWith('en'));
-  const ranked = [...english].sort((a, b) => {
-    const rank = (v) => {
-      const i = PREFERRED.findIndex(p => v.name.toLowerCase().includes(p));
-      return i === -1 ? PREFERRED.length + (v.lang === 'en-IN' ? -0.5 : 0) : i;
-    };
-    return rank(a) - rank(b);
-  });
-  return ranked.slice(0, 8);
+  const natural = english.filter(v => !NOVELTY.test(v.name));
+  const rank = (v) => {
+    const i = PREFERRED.findIndex(p => v.name.toLowerCase().includes(p));
+    return i === -1 ? PREFERRED.length + (v.lang === 'en-IN' ? -0.5 : 0) : i;
+  };
+  // Only if a device had nothing else would the novelty voices be offered
+  return [...(natural.length ? natural : english)].sort((a, b) => rank(a) - rank(b)).slice(0, MAX_VOICES);
 }
+
+const sameVoices = (a, b) => a.length === b.length && a.every((v, i) => v.name === b[i].name);
 
 const shortVoiceName = (voice) =>
   voice.name.replace(/Microsoft|Google|Desktop|Online|\(Natural\)/g, '').replace(/\s+/g, ' ').trim() + ` (${voice.lang})`;
@@ -149,10 +159,20 @@ export function useAuctioneer({ live, roomStatus }) {
 
   useEffect(() => {
     if (!queue) return;
-    const load = () => setVoices(pickVoices());
+    const load = () => {
+      const next = pickVoices();
+      setVoices(current => (sameVoices(current, next) ? current : next));
+    };
     window.speechSynthesis.addEventListener('voiceschanged', load);
+    // The list can arrive before this listener is in place, and some browsers never announce
+    // it: look again now and for a few seconds
+    load();
+    const retry = setInterval(load, 500);
+    const stopRetrying = setTimeout(() => clearInterval(retry), 6000);
     return () => {
       window.speechSynthesis.removeEventListener('voiceschanged', load);
+      clearInterval(retry);
+      clearTimeout(stopRetrying);
       queue.stop();
     };
   }, [queue]);
@@ -204,7 +224,8 @@ export function useAuctioneer({ live, roomStatus }) {
     enabled, setEnabled,
     rate, setRate,
     pitch, setPitch,
-    voiceName: voiceName || voices[0]?.name || '',
+    // A voice picked earlier that's no longer offered falls back to the one actually speaking
+    voiceName: voices.some(v => v.name === voiceName) ? voiceName : voices[0]?.name || '',
     setVoiceName,
     voices: voices.map(v => ({ name: v.name, label: shortVoiceName(v) })),
     preview: () => {
