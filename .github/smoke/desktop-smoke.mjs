@@ -348,7 +348,17 @@ async function auction(electron, appDir, site) {
     browser = await connect(9223);
     const page = await findPage(browser, site, 120_000);
     check('the app opens the test server', page);
-    if (!page) return;
+    if (!page) {
+      // What the app's own network code gets from the server, next to plain Node
+      const probe = (url) => `require('electron').net.fetch('${url}', { cache: 'no-store' }).then(async r => r.status + ' ' + (await r.text()).slice(0, 80), e => 'error: ' + e.message)`;
+      for (const host of ['localhost', '127.0.0.1', '[::1]']) {
+        const url = `${site.replace('localhost', host)}/api/health`;
+        info(`app net.fetch ${url}`, await main.evaluate(probe(url)).catch(e => `evaluate failed: ${e.message}`));
+        info(`node fetch ${url}`, await fetch(url).then(async r => `${r.status} ${(await r.text()).slice(0, 80)}`, e => `error: ${e.cause?.code ?? e.message}`));
+      }
+      info('app online', await main.evaluate("require('electron').net.isOnline()").catch(e => e.message));
+      return;
+    }
 
     // Sign in as a guest and host a quick Sprint 5 room
     await page.evaluate(() => { sessionStorage.setItem('aa_intro_seen', 'true'); location.reload(); });
@@ -491,7 +501,8 @@ async function auction(electron, appDir, site) {
   } finally {
     browser?.disconnect();
     if (main) {
-      await main.evaluate('(require("electron").app.exit(0), true)').catch(() => {});
+      // The app quits before it can answer, so don't wait for one
+      await Promise.race([main.evaluate('(setTimeout(() => require("electron").app.exit(0), 100), true)').catch(() => {}), sleep(2000)]);
       main.close();
     }
     app.kill();
