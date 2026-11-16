@@ -66,6 +66,12 @@ async function findPage(browser, origin, timeoutMs) {
     for (const page of await browser.pages()) if (page.url().startsWith(origin)) return page;
     await sleep(1000);
   }
+  // Never got there: say what the window shows instead (the loading screen's status, an error)
+  for (const page of await browser.pages()) {
+    const text = await page.evaluate(() => document.body?.innerText.replace(/\s+/g, ' ').slice(0, 200)).catch(err => `unreadable: ${err.message}`);
+    info('window shows', { url: page.url(), text });
+  }
+  screenshot(`no-site-${mode}`);
   return null;
 }
 
@@ -121,7 +127,9 @@ function openThroughSystem(link, tool = 'gio') {
       execFileSync(command[0], command[1], { env: ENV, timeout: 15_000, stdio: 'pipe' });
     }
   } catch (err) {
-    info(`${tool} could not open ${link}`, `${err.message.split('\n')[0]} ${err.stderr?.toString().trim() ?? ''}`.trim());
+    const output = `${err.stdout ?? ''}${err.stderr ?? ''}`.trim();
+    fs.appendFileSync(path.join(OUT, `open-${tool}.log`), `${link}\n${err.message}\n${output}\n\n`);
+    info(`${tool} could not open ${link}`, `${err.message.split('\n')[0]} ${output.split('\n')[0]}`.trim());
   }
 }
 

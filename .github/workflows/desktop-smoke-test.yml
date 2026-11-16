@@ -47,7 +47,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q xvfb openbox dunst dbus-x11 xdotool imagemagick pulseaudio libfuse2t64 libglib2.0-bin
+          sudo apt-get install -y -q xvfb openbox dunst dbus-x11 xdotool imagemagick pulseaudio libfuse2t64 libglib2.0-bin desktop-file-utils
           echo "AppArmor limits user namespaces: $(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || echo n/a)"
           mkdir -p "$SMOKE_OUT"
           Xvfb :99 -screen 0 1600x1000x24 > /dev/null 2>&1 &
@@ -63,6 +63,12 @@ jobs:
           pactl load-module module-null-sink sink_name=smoke > /dev/null || true
           pactl set-default-sink smoke || true
           sleep 2
+
+      # Windows runners have no sound card: a virtual one, so the voice has somewhere to speak
+      - name: Sound device (Windows)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        uses: LABSN/sound-ci-helpers@d08c889a7bba7d9b1b059f8f76dac4672ea3a9cf # v1: installs the VB-Cable virtual sound card
 
       # ─── Install the release as people do ───
       - name: Install the release (Linux .deb)
