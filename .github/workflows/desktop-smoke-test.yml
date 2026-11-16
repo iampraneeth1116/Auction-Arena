@@ -11,7 +11,7 @@ on:
     inputs:
       release:
         description: Release tag to test
-        default: v0.1.0
+        default: v0.1.1
 
 permissions:
   contents: read
@@ -26,7 +26,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     env:
-      RELEASE: ${{ inputs.release || 'v0.1.0' }}
+      RELEASE: ${{ inputs.release || 'v0.1.1' }}
       GH_TOKEN: ${{ github.token }}
       SMOKE_OUT: ${{ github.workspace }}/smoke-out
       # The test server's own database on the runner

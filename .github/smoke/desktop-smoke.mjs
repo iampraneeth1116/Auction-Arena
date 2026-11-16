@@ -432,7 +432,7 @@ async function auction(electron, appDir, site) {
     // key press in the room; a lot's last seconds always beep
     await sleep(12_000);
     const untouched = await listen();
-    info('sound effects before any click or key in the room', { beeps: untouched.beeps, plays: untouched.plays, contexts: untouched.contexts });
+    check('the room\'s sound effects play before any click or key (beeps / anthem)', (untouched.beeps > 0 || untouched.plays > 0) && untouched.contexts.includes('running'), JSON.stringify({ beeps: untouched.beeps, plays: untouched.plays, contexts: untouched.contexts }));
     await page.keyboard.press('Shift');
     await page.waitForFunction(() => window.smoke.beeps > 0 || window.smoke.plays > 0, { timeout: 45_000, polling: 300 }).catch(() => {});
     const effects = await listen();
