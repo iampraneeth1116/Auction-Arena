@@ -6,6 +6,9 @@
 //                                        no click, a notification, invite links through the system,
 //                                        and Continue with Google opening the browser
 //   appimage <file.AppImage>             the Linux AppImage starts and opens the live site
+//   update <app> ready|out <version>     an older release finds <version>: on Windows and in the
+//                                        AppImage it downloads it ("ready") and quitting installs
+//                                        it; the .deb (and macOS) say it's "out" instead
 //   auction <electron> <appDir> <site>   the same app code from source against a test server, so a
 //                                        real auction creates nothing on the live database: a quick
 //                                        auction with a bot, its voice and sound, notifications,
@@ -14,6 +17,7 @@
 //
 // Prints PASS / FAIL / INFO lines and exits 1 on any FAIL. Screenshots and logs go to SMOKE_OUT.
 import { execFileSync, spawn } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -194,6 +198,77 @@ const speakOnce = (page) => page.evaluate(() => new Promise((resolve) => {
     setTimeout(speak, 10_000);
   }
 }));
+
+const waitUntil = async (test, timeoutMs, everyMs = 2000) => {
+  const until = Date.now() + timeoutMs;
+  for (;;) {
+    if (await test()) return true;
+    if (Date.now() > until) return false;
+    await sleep(everyMs);
+  }
+};
+
+// electron-updater keeps a downloaded update in <cache>/<app>-updater/pending with update-info.json
+function downloadedUpdate(version) {
+  const root = PLATFORM === 'win32' ? process.env.LOCALAPPDATA : path.join(os.homedir(), '.cache');
+  for (const dir of fs.existsSync(root) ? fs.readdirSync(root).filter(d => d.endsWith('-updater')) : []) {
+    const pending = path.join(root, dir, 'pending');
+    if (!fs.existsSync(path.join(pending, 'update-info.json'))) continue;
+    const files = fs.readdirSync(pending);
+    if (files.some(f => f.includes(version) && !f.startsWith('temp-'))) return files;
+  }
+  return null;
+}
+
+// Is <version> what's installed now? Windows: the app's own file version. AppImage: a file next
+// to the old one with the published checksum (the new one is saved under its own name).
+async function installedVersionIs(bin, version) {
+  if (PLATFORM === 'win32') {
+    const found = execFileSync('powershell', ['-NoProfile', '-Command', `(Get-Item '${bin}').VersionInfo.ProductVersion`]).toString().trim();
+    return found.startsWith(version) ? found : false;
+  }
+  const yml = await fetch(`https://github.com/iampraneeth1116/Auction-Arena/releases/download/v${version}/latest-linux.yml`).then(r => r.text());
+  const expected = yml.match(/url: (\S+\.AppImage)\s+sha512: (\S+)/)?.[2];
+  for (const name of fs.readdirSync(path.dirname(bin)).filter(f => f.endsWith('.AppImage'))) {
+    const sha = crypto.createHash('sha512').update(fs.readFileSync(path.join(path.dirname(bin), name))).digest('base64');
+    if (sha === expected) return name;
+  }
+  return false;
+}
+
+// ─── An older release finding the new one ───
+async function update(bin, expect, version) {
+  const app = launch(bin, ['--remote-debugging-port=9224', ...PROFILE_ARGS], `update-${PLATFORM}-${expect}`);
+  let exited = false;
+  app.once('exit', () => { exited = true; });
+  let browser;
+  try {
+    browser = await connect(9224);
+    const page = await findPage(browser, LIVE, 240_000);
+    check('the older version opens the live site', page);
+    if (!page) return;
+    const said = new RegExp(`Auction Arena ${version.replace(/\./g, '\\.')} is ${expect}`);
+    if (expect === 'out') {
+      check(`it finds ${version} and says "Auction Arena ${version} is out"`, await waitUntil(() => said.test(dbusLog()), 180_000), 'no such notification in the D-Bus log');
+      return;
+    }
+    // Windows and the AppImage download it in the background, then say it's ready
+    const downloaded = await waitUntil(() => downloadedUpdate(version), 300_000);
+    check(`it downloads ${version} in the background`, downloaded, 'nothing in the updater\'s pending folder');
+    if (PLATFORM === 'linux') check(`…and says "Auction Arena ${version} is ready"`, await waitUntil(() => said.test(dbusLog()), 30_000), 'no such notification in the D-Bus log');
+    info('downloaded', downloadedUpdate(version));
+    // Quitting installs it (closing the last window quits the app on Windows and Linux)
+    await page.evaluate(() => window.close()).catch(() => {});
+    check('closing the window quits the app', await waitUntil(() => exited, 60_000, 500));
+    const installed = await waitUntil(() => installedVersionIs(bin, version), 240_000, 3000);
+    check(`…and quitting installs ${version}`, installed, `still ${PLATFORM === 'win32' ? execFileSync('powershell', ['-NoProfile', '-Command', `(Get-Item '${bin}').VersionInfo.ProductVersion`]).toString().trim() : fs.readdirSync(path.dirname(bin)).join(', ')}`);
+    if (installed) info('installed', await installedVersionIs(bin, version));
+  } finally {
+    browser?.disconnect();
+    if (!exited) app.kill();
+    await sleep(1000);
+  }
+}
 
 // ─── The released app, on the live site ───
 async function installed(bin, { quick = false } = {}) {
@@ -513,6 +588,7 @@ async function auction(electron, appDir, site) {
 try {
   if (mode === 'installed') await installed(args[0]);
   else if (mode === 'appimage') await installed(args[0], { quick: true });
+  else if (mode === 'update') await update(args[0], args[1], args[2]);
   else if (mode === 'auction') await auction(args[0], args[1], args[2]);
   else throw new Error(`unknown mode ${mode}`);
 } catch (err) {

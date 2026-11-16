@@ -12,6 +12,9 @@ on:
       release:
         description: Release tag to test
         default: v0.1.1
+      old_release:
+        description: An older release, which should update to it
+        default: v0.1.0
 
 permissions:
   contents: read
@@ -27,6 +30,8 @@ jobs:
     timeout-minutes: 45
     env:
       RELEASE: ${{ inputs.release || 'v0.1.1' }}
+      # The release before it, to check that it updates to RELEASE
+      OLD_RELEASE: ${{ inputs.old_release || 'v0.1.0' }}
       GH_TOKEN: ${{ github.token }}
       SMOKE_OUT: ${{ github.workspace }}/smoke-out
       # The test server's own database on the runner
@@ -196,6 +201,37 @@ jobs:
           "PASS  the app is removed"
           if (Test-Path 'HKCU:\Software\Classes\auctionarena') { "FAIL  auctionarena:// is still registered"; exit 1 }
           "PASS  auctionarena:// links are no longer registered"
+
+      # ─── Updating: the previous release finds this one ───
+      - name: Update from the previous release (Windows)
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          gh release download $env:OLD_RELEASE -R $env:GITHUB_REPOSITORY -p '*.exe' -D old-release
+          Start-Process -FilePath (Get-ChildItem old-release\*.exe)[0].FullName -ArgumentList '/S' -Wait
+          Start-Sleep 3
+          Get-Process 'Auction Arena' -ErrorAction SilentlyContinue | Stop-Process -Force
+          $exe = (Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter 'Auction Arena.exe' | Select-Object -First 1).FullName
+          "Installed $env:OLD_RELEASE at $exe, file version " + (Get-Item $exe).VersionInfo.ProductVersion
+          $newVersion = $env:RELEASE.TrimStart('v')
+          node .github/smoke/desktop-smoke.mjs update "$exe" ready $newVersion
+          $code = $LASTEXITCODE
+          "auctionarena:// handler after the update: " + $(if (Test-Path 'HKCU:\Software\Classes\auctionarena\shell\open\command') { (Get-ItemProperty 'HKCU:\Software\Classes\auctionarena\shell\open\command').'(default)' } else { 'not registered' })
+          exit $code
+      - name: Update from the previous release (Linux AppImage)
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        run: |
+          gh release download "$OLD_RELEASE" -R "$GITHUB_REPOSITORY" -p '*.AppImage' -D old-release
+          chmod +x old-release/*.AppImage
+          node .github/smoke/desktop-smoke.mjs update "$(ls "$PWD"/old-release/*.AppImage)" ready "${RELEASE#v}"
+          ls -l old-release
+      - name: Update notice from the previous release (Linux .deb)
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        run: |
+          gh release download "$OLD_RELEASE" -R "$GITHUB_REPOSITORY" -p '*.deb' -D old-release
+          sudo apt-get install -y -q ./old-release/*.deb > /dev/null
+          node .github/smoke/desktop-smoke.mjs update "$(dpkg -L auction-arena-desktop | grep -E '^/opt/[^/]+/auction-arena-desktop$')" out "${RELEASE#v}"
+          sudo apt-get remove -y -q auction-arena-desktop > /dev/null
 
       - name: Screenshots and logs
         if: ${{ !cancelled() }}
