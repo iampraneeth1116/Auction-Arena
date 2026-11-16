@@ -1,0 +1,202 @@
+name: Desktop smoke test
+
+# Installs a released version of the desktop app on Windows and Linux and drives it with
+# .github/smoke/desktop-smoke.mjs: the installed app on the live site (read-only), then a quick
+# auction with the same app code against a test server and database on the runner, so nothing
+# is created on the live database. Screenshots and logs are kept as the run's artifacts.
+on:
+  push:
+    branches: [desktop-smoke-test]
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Release tag to test
+        default: v0.1.0
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    if: github.repository == 'iampraneeth1116/Auction-Arena'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      RELEASE: ${{ inputs.release || 'v0.1.0' }}
+      GH_TOKEN: ${{ github.token }}
+      SMOKE_OUT: ${{ github.workspace }}/smoke-out
+      # The test server's own database on the runner
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/smoke
+      JWT_SECRET: desktop-smoke-test-only-secret-0123456789abcdef
+      PORT: '3001'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: '.node-version'
+      - name: Test tools
+        working-directory: .github/smoke
+        run: npm ci
+
+      # ─── Linux: a desktop session (screen, window manager, notifications, sound) ───
+      - name: Desktop session (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q xvfb openbox dunst dbus-x11 xdotool imagemagick pulseaudio libfuse2t64
+          echo "AppArmor limits user namespaces: $(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || echo n/a)"
+          mkdir -p "$SMOKE_OUT"
+          Xvfb :99 -screen 0 1600x1000x24 > /dev/null 2>&1 &
+          export DISPLAY=:99
+          sleep 1
+          eval "$(dbus-launch --sh-syntax)"
+          { echo "DISPLAY=:99"; echo "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS"; echo "DBUS_LOG=$SMOKE_OUT/dbus.log"; } >> "$GITHUB_ENV"
+          dbus-monitor --session "interface='org.freedesktop.Notifications'" "interface='org.freedesktop.ScreenSaver'" \
+            "interface='org.freedesktop.PowerManagement.Inhibit'" "interface='org.gnome.SessionManager'" > "$SMOKE_OUT/dbus.log" 2>&1 &
+          openbox > /dev/null 2>&1 &
+          dunst > "$SMOKE_OUT/dunst.log" 2>&1 &
+          pulseaudio --start --exit-idle-time=-1 || true
+          pactl load-module module-null-sink sink_name=smoke > /dev/null || true
+          pactl set-default-sink smoke || true
+          sleep 2
+
+      # ─── Install the release as people do ───
+      - name: Install the release (Linux .deb)
+        if: runner.os == 'Linux'
+        run: |
+          gh release download "$RELEASE" -R "$GITHUB_REPOSITORY" -p '*.deb' -p '*.AppImage' -D release
+          sudo apt-get install -y ./release/*.deb
+          dpkg -s auction-arena-desktop | grep -E '^(Version|Depends|Recommends):'
+          BIN=$(dpkg -L auction-arena-desktop | grep -E '^/opt/[^/]+/auction-arena-desktop$')
+          echo "APP_BIN=$BIN" >> "$GITHUB_ENV"
+          echo "--- launcher"; cat "$(dpkg -L auction-arena-desktop | grep -E '\.desktop$')"
+          echo "--- auctionarena:// handler: $(xdg-mime query default x-scheme-handler/auctionarena)"
+          echo "--- sandbox helper: $(ls -l "$(dirname "$BIN")/chrome-sandbox")"
+          echo "--- speech-dispatcher: $(dpkg-query -W -f='${Status} ${Version}' speech-dispatcher 2>/dev/null || echo not installed)"
+          pkill -f auction-arena-desktop || true
+
+      - name: Install the release (Windows .exe)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force $env:SMOKE_OUT | Out-Null
+          gh release download $env:RELEASE -R $env:GITHUB_REPOSITORY -p '*.exe' -D release
+          $installer = (Get-ChildItem release\*.exe)[0].FullName
+          Start-Process -FilePath $installer -ArgumentList '/S' -Wait
+          Start-Sleep 3
+          Get-Process 'Auction Arena' -ErrorAction SilentlyContinue | Stop-Process -Force
+          $exe = (Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter 'Auction Arena.exe' | Select-Object -First 1).FullName
+          if (-not $exe) { throw 'The installer did not put Auction Arena.exe under %LOCALAPPDATA%\Programs' }
+          "Installed at: $exe"
+          "APP_EXE=$exe" >> $env:GITHUB_ENV
+          "auctionarena:// handler: " + (Get-ItemProperty 'HKCU:\Software\Classes\auctionarena\shell\open\command').'(default)'
+          "Start menu: " + ((Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter '*Auction*').FullName -join ', ')
+          "Desktop: " + ((Get-ChildItem ([Environment]::GetFolderPath('Desktop')) -Filter '*Auction*').FullName -join ', ')
+
+      # ─── The installed app, on the live site ───
+      - name: Installed app (Linux)
+        if: runner.os == 'Linux'
+        run: node .github/smoke/desktop-smoke.mjs installed "$APP_BIN"
+      - name: Installed app (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: node .github/smoke/desktop-smoke.mjs installed "$env:APP_EXE"
+      - name: Close the browser Google sign-in opened
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then taskkill //F //IM msedge.exe > /dev/null 2>&1 || true
+          else pkill -f 'chrome|firefox' || true; fi
+      - name: AppImage (Linux)
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        run: |
+          chmod +x release/*.AppImage
+          node .github/smoke/desktop-smoke.mjs appimage "$(ls release/*.AppImage)"
+
+      # ─── A quick auction: the same app code against a test server on the runner ───
+      - name: Test database (Linux)
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        run: |
+          sudo systemctl start postgresql.service
+          sudo -u postgres psql -q -c "ALTER USER postgres PASSWORD 'postgres';"
+          sudo -u postgres createdb smoke
+      - name: Test database (Windows)
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          $service = Get-Service -Name 'postgresql*' | Select-Object -First 1
+          Set-Service $service.Name -StartupType Manual
+          Start-Service $service.Name
+          $env:PGPASSWORD = 'root'
+          & "$env:PGBIN\psql.exe" -U postgres -q -c "ALTER USER postgres PASSWORD 'postgres';"
+          & "$env:PGBIN\createdb.exe" -U postgres smoke
+      - name: Build the test server
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          npm ci
+          npm run db:deploy
+          npm run build
+      - name: Start the test server (Linux)
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        run: |
+          nohup node server/index.js > "$SMOKE_OUT/server.log" 2>&1 &
+          for _ in $(seq 1 60); do curl -sf "http://localhost:$PORT/api/health" && break; sleep 1; done
+      - name: Start the test server (Windows)
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          Start-Process -FilePath node -ArgumentList 'server/index.js' -WindowStyle Hidden `
+            -RedirectStandardOutput "$env:SMOKE_OUT\server.log" -RedirectStandardError "$env:SMOKE_OUT\server-errors.log"
+          for ($i = 0; $i -lt 60; $i++) {
+            try { (Invoke-WebRequest "http://localhost:$env:PORT/api/health" -UseBasicParsing).Content; break } catch { Start-Sleep 1 }
+          }
+      - name: Desktop app from source
+        if: ${{ !cancelled() }}
+        shell: bash
+        working-directory: desktop
+        run: |
+          npm ci
+          ELECTRON=$(node -p "require('electron')")
+          echo "ELECTRON=$ELECTRON" >> "$GITHUB_ENV"
+          # Electron from npm has no setuid sandbox helper; the .deb sets its own up
+          if [ "$RUNNER_OS" = Linux ]; then
+            sudo chown root:root "$(dirname "$ELECTRON")/chrome-sandbox"
+            sudo chmod 4755 "$(dirname "$ELECTRON")/chrome-sandbox"
+          fi
+      - name: Quick auction
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: node .github/smoke/desktop-smoke.mjs auction "$ELECTRON" desktop "http://localhost:$PORT"
+
+      # ─── Uninstall ───
+      - name: Uninstall (Linux)
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        run: |
+          sudo apt-get remove -y auction-arena-desktop
+          if [ -e "$APP_BIN" ]; then echo "FAIL  the app is still installed"; exit 1; fi
+          echo "PASS  the app is removed"
+          echo "auctionarena:// handler afterwards: '$(xdg-mime query default x-scheme-handler/auctionarena)'"
+      - name: Uninstall (Windows)
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          $uninstaller = Get-ChildItem (Split-Path $env:APP_EXE) -Filter 'Uninstall*.exe' | Select-Object -First 1
+          Start-Process $uninstaller.FullName -ArgumentList '/S' -Wait
+          for ($i = 0; $i -lt 30 -and (Test-Path $env:APP_EXE); $i++) { Start-Sleep 1 }
+          if (Test-Path $env:APP_EXE) { "FAIL  the app is still installed"; exit 1 }
+          "PASS  the app is removed"
+          if (Test-Path 'HKCU:\Software\Classes\auctionarena') { "FAIL  auctionarena:// is still registered"; exit 1 }
+          "PASS  auctionarena:// links are no longer registered"
+
+      - name: Screenshots and logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-${{ runner.os }}
+          path: smoke-out
+          if-no-files-found: warn

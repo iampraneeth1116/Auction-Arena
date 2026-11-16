@@ -1,0 +1,9 @@
+{
+  "name": "desktop-smoke-test",
+  "private": true,
+  "type": "module",
+  "description": "Drives the desktop app for .github/workflows/desktop-smoke-test.yml",
+  "dependencies": {
+    "puppeteer-core": "24.43.1"
+  }
+}
