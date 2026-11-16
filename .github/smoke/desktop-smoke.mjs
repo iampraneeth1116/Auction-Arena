@@ -110,10 +110,19 @@ function windowState(pid, minimise) {
   }
 }
 
-// Opens a link the way clicking it in another app does: the system hands it to the app
-function openThroughSystem(link) {
-  if (PLATFORM === 'win32') execFileSync('powershell', ['-NoProfile', '-Command', `Start-Process '${link}'`]);
-  else if (PLATFORM === 'linux') spawn('xdg-open', [link], { env: ENV, stdio: 'ignore', detached: true }).unref();
+// Opens a link the way clicking it in another app does: the system hands it to the app. On Linux
+// the tool is what desktops use: gio (GNOME and most others), or bare xdg-open on a desktop xdg-utils
+// doesn't recognise.
+function openThroughSystem(link, tool = 'gio') {
+  try {
+    if (PLATFORM === 'win32') execFileSync('powershell', ['-NoProfile', '-Command', `Start-Process '${link}'`]);
+    else if (PLATFORM === 'linux') {
+      const command = tool === 'gio' ? ['gio', ['open', link]] : ['xdg-open', [link]];
+      execFileSync(command[0], command[1], { env: ENV, timeout: 15_000, stdio: 'pipe' });
+    }
+  } catch (err) {
+    info(`${tool} could not open ${link}`, `${err.message.split('\n')[0]} ${err.stderr?.toString().trim() ?? ''}`.trim());
+  }
 }
 
 const dbusLog = () => (process.env.DBUS_LOG && fs.existsSync(process.env.DBUS_LOG) ? fs.readFileSync(process.env.DBUS_LOG, 'utf8') : '');
@@ -188,7 +197,9 @@ async function installed(bin, { quick = false } = {}) {
     const page = await findPage(browser, LIVE, 240_000);
     check('the app opens the live site', page, (await browser.pages()).map(p => p.url()).join(' | '));
     if (!page) return;
-    await page.waitForFunction(() => document.body.innerText.length > 200, { timeout: 60_000 }).catch(() => {});
+    // Past the site's pre-show intro, as someone who has seen it once
+    await page.evaluate(() => { sessionStorage.setItem('aa_intro_seen', 'true'); location.reload(); });
+    await page.waitForFunction(() => document.body.innerText.length > 200 && !document.body.innerText.includes('PRE-SHOW'), { timeout: 90_000 }).catch(() => {});
     const site = await page.evaluate(() => ({
       title: document.title,
       platform: window.auctionArenaDesktop?.platform,
@@ -228,6 +239,11 @@ async function installed(bin, { quick = false } = {}) {
     openThroughSystem('auctionarena://settings/../../evil');
     await sleep(4000);
     check('…and a link to anything else is ignored', (await pathOf(page)) === '/lobby/ZZ9Q7X?watch=1', await pathOf(page));
+    if (PLATFORM === 'linux') {
+      // A bare window manager, with no desktop xdg-utils knows: xdg-open runs the launcher itself
+      openThroughSystem('auctionarena://summary/ZZ9Q7X', 'xdg-open');
+      info('the same link with bare xdg-open (no desktop environment)', (await waitForPath(page, /^\/summary\/ZZ9Q7X$/, 15_000)) ? 'works' : `doesn't arrive (still ${await pathOf(page)})`);
+    }
 
     // Continue with Google opens the system browser on the site's desktop sign-in
     await goTo(page, '/');

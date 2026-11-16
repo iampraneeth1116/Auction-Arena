@@ -47,7 +47,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q xvfb openbox dunst dbus-x11 xdotool imagemagick pulseaudio libfuse2t64
+          sudo apt-get install -y -q xvfb openbox dunst dbus-x11 xdotool imagemagick pulseaudio libfuse2t64 libglib2.0-bin
           echo "AppArmor limits user namespaces: $(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || echo n/a)"
           mkdir -p "$SMOKE_OUT"
           Xvfb :99 -screen 0 1600x1000x24 > /dev/null 2>&1 &
@@ -93,7 +93,8 @@ jobs:
           if (-not $exe) { throw 'The installer did not put Auction Arena.exe under %LOCALAPPDATA%\Programs' }
           "Installed at: $exe"
           "APP_EXE=$exe" >> $env:GITHUB_ENV
-          "auctionarena:// handler: " + (Get-ItemProperty 'HKCU:\Software\Classes\auctionarena\shell\open\command').'(default)'
+          # The app registers auctionarena:// links itself when it first starts
+          "auctionarena:// handler before the first start: " + $(if (Test-Path 'HKCU:\Software\Classes\auctionarena') { 'registered' } else { 'not yet' })
           "Start menu: " + ((Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter '*Auction*').FullName -join ', ')
           "Desktop: " + ((Get-ChildItem ([Environment]::GetFolderPath('Desktop')) -Filter '*Auction*').FullName -join ', ')
 
@@ -104,7 +105,11 @@ jobs:
       - name: Installed app (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: node .github/smoke/desktop-smoke.mjs installed "$env:APP_EXE"
+        run: |
+          node .github/smoke/desktop-smoke.mjs installed "$env:APP_EXE"
+          $code = $LASTEXITCODE
+          "auctionarena:// handler after the first start: " + $(if (Test-Path 'HKCU:\Software\Classes\auctionarena\shell\open\command') { (Get-ItemProperty 'HKCU:\Software\Classes\auctionarena\shell\open\command').'(default)' } else { 'not registered' })
+          exit $code
       - name: Close the browser Google sign-in opened
         if: ${{ !cancelled() }}
         shell: bash
@@ -133,6 +138,7 @@ jobs:
           Start-Service $service.Name
           $env:PGPASSWORD = 'root'
           & "$env:PGBIN\psql.exe" -U postgres -q -c "ALTER USER postgres PASSWORD 'postgres';"
+          $env:PGPASSWORD = 'postgres'
           & "$env:PGBIN\createdb.exe" -U postgres smoke
       - name: Build the test server
         if: ${{ !cancelled() }}
@@ -161,7 +167,9 @@ jobs:
         working-directory: desktop
         run: |
           npm ci
-          ELECTRON=$(node -p "require('electron')")
+          # The first require downloads Electron's binary and says so; the path is the last line
+          node -e "require('electron')" > /dev/null
+          ELECTRON=$(node -p "require('electron')" | tail -n 1)
           echo "ELECTRON=$ELECTRON" >> "$GITHUB_ENV"
           # Electron from npm has no setuid sandbox helper; the .deb sets its own up
           if [ "$RUNNER_OS" = Linux ]; then
