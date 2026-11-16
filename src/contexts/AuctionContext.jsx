@@ -1,8 +1,12 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { connectSocket, emitWithAck, getServerTime, getSocket } from '../lib/socket';
 import { AuctionContext } from '../hooks/useAuction';
 import { useAuth } from '../hooks/useAuth';
+
+// How long leaving a room's page waits before telling the server, in case the next page is
+// the same room. Longer than a slow page change, shorter than anyone notices.
+const LEAVE_DELAY_MS = 3000;
 
 // The server owns every room. This context mirrors the room state it pushes over
 // Socket.IO and forwards the user's actions to it.
@@ -16,6 +20,9 @@ export const AuctionProvider = ({ children }) => {
   const [roomError, setRoomError] = useState(null);
   // Every raise on the lot currently under the hammer, newest last
   const [bidTrail, setBidTrail] = useState([]);
+
+  // Room id → the leave waiting to be sent (see joinAuction)
+  const pendingLeaves = useRef(new Map());
 
   const team = user ? roomTeams.find(t => t.userId === user.uid) || null : null;
 
@@ -41,6 +48,10 @@ export const AuctionProvider = ({ children }) => {
     const normalizedId = roomId.toUpperCase();
     const socket = getSocket();
     let active = true;
+    // Back in the room straight after leaving it (the lobby handing over to the auction room):
+    // the leave never happens, so the server never sees the host walk out
+    clearTimeout(pendingLeaves.current.get(normalizedId));
+    pendingLeaves.current.delete(normalizedId);
     setLoading(true);
     setRoomError(null);
 
@@ -116,7 +127,12 @@ export const AuctionProvider = ({ children }) => {
       socket.off('chat:message', onMessage);
       socket.off('room:kicked', onKicked);
       socket.off('connect', join);
-      if (socket.connected) socket.emit('room:leave', { roomId: normalizedId });
+      // Leaving waits a moment: the next page may be this room's lobby, auction or results, and
+      // leaving and rejoining in between reads as the host walking out, which pauses the room
+      pendingLeaves.current.set(normalizedId, setTimeout(() => {
+        pendingLeaves.current.delete(normalizedId);
+        if (socket.connected) socket.emit('room:leave', { roomId: normalizedId });
+      }, LEAVE_DELAY_MS));
       setCurrentAuction(null);
       setRoomTeams([]);
       setMessages([]);
