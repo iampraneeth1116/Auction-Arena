@@ -1,0 +1,419 @@
+// The Auction Arena desktop app: the live site in its own window. The pages, the API and
+// the live rooms all stay on the server, so every deploy reaches the app at once.
+import crypto from 'node:crypto';
+import path from 'node:path';
+import { app, BrowserWindow, ipcMain, net, powerMonitor, powerSaveBlocker, session, shell } from 'electron';
+import { notify, removeTray, showTray } from './background.js';
+import { PROTOCOL, linkInArgs, routeFromLink, signInCodeFromLink } from './links.js';
+import { buildMenu } from './menu.js';
+import { checkForUpdatesNow, startUpdateChecks } from './updates.js';
+
+const PRODUCTION_URL = 'https://auction-arena-g1ot.onrender.com';
+const ICON_PATH = path.join(import.meta.dirname, '../assets/icon.png');
+const LOADING_PAGE = path.join(import.meta.dirname, 'loading.html');
+
+// While developing, `--url=http://localhost:5173` (or AUCTION_ARENA_URL) points the app at a
+// local server, to try a change before it's deployed. Anything else must be https. The
+// installed app ignores both: nobody can start it pointed at another site.
+function startUrl() {
+  if (app.isPackaged) return new URL(PRODUCTION_URL);
+  const asked = process.argv.find(arg => arg.startsWith('--url='))?.slice('--url='.length)
+    || process.env.AUCTION_ARENA_URL;
+  if (!asked) return new URL(PRODUCTION_URL);
+  try {
+    const url = new URL(asked);
+    const local = ['localhost', '127.0.0.1'].includes(url.hostname);
+    if (url.protocol === 'https:' || (local && url.protocol === 'http:')) return url;
+  } catch {
+    // not a URL: fall through
+  }
+  console.warn(`[desktop] Ignoring ${asked}: only https or a localhost address. Opening ${PRODUCTION_URL}.`);
+  return new URL(PRODUCTION_URL);
+}
+
+const START_URL = startUrl();
+
+const isAppPage = (url) => {
+  try {
+    return new URL(url).origin === START_URL.origin;
+  } catch {
+    return false;
+  }
+};
+
+// Links to other sites (a WhatsApp share, a photo's source, the contact email) open in
+// the person's own browser or mail app, never inside the app
+function openOutside(url) {
+  if (/^(https?|mailto):/i.test(url)) shell.openExternal(url);
+}
+
+// What the site may ask for: notifications, copying a room code, full screen. Nothing else,
+// and only from the site itself.
+const ALLOWED_PERMISSIONS = new Set(['notifications', 'clipboard-sanitized-write', 'fullscreen']);
+
+function lockDownSession() {
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    callback(ALLOWED_PERMISSIONS.has(permission) && isAppPage(webContents.getURL()));
+  });
+  session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin) =>
+    ALLOWED_PERMISSIONS.has(permission) && requestingOrigin === START_URL.origin);
+}
+
+const HEALTH_URL = new URL('/api/health', START_URL).href;
+const SLOW_AFTER_MS = 90_000;
+
+// Is the server up? Its health check answers {"ok":true} once the server and its database
+// are ready. While Render's free plan wakes a sleeping server, Render's own waiting page
+// answers instead.
+async function checkServer() {
+  if (!net.isOnline()) return 'offline';
+  try {
+    const res = await net.fetch(HEALTH_URL, { cache: 'no-store', signal: AbortSignal.timeout(10_000) });
+    const body = await res.json().catch(() => null);
+    return body?.ok === true ? 'ready' : 'waking';
+  } catch {
+    return net.isOnline() ? 'waking' : 'offline';
+  }
+}
+
+// Window id → the site page to open once the server answers
+const waiting = new Map();
+
+// Shows the loading screen until the server answers, then opens `url`, a page of the site.
+// The app's own screen replaces Render's "waking up" page and says when you're offline.
+async function openWhenServerReady(win, url) {
+  const id = win.id;
+  const alreadyWaiting = waiting.has(id);
+  waiting.set(id, url);
+  if (alreadyWaiting) return; // the wait already running opens the newest address
+
+  await win.loadFile(LOADING_PAGE).catch(() => {});
+  const started = Date.now();
+  for (;;) {
+    if (win.isDestroyed()) {
+      waiting.delete(id);
+      return;
+    }
+    const state = await checkServer();
+    if (state === 'ready') break;
+    const shown = state === 'waking' && Date.now() - started > SLOW_AFTER_MS ? 'slow' : state;
+    win.webContents.executeJavaScript(`window.showStatus?.(${JSON.stringify(shown)})`).catch(() => {});
+    await new Promise(resolve => setTimeout(resolve, state === 'offline' ? 3000 : 2000));
+  }
+
+  // Hand over before loading: if this load fails too, did-fail-load starts a fresh wait
+  const target = waiting.get(id);
+  waiting.delete(id);
+  if (win.isDestroyed()) return;
+  const opened = await win.loadURL(target).then(() => true, () => false);
+  // Back from the first page must not return to the loading screen
+  if (opened && !win.isDestroyed()) win.webContents.navigationHistory.clear();
+}
+
+let mainWindow = null;
+// The page the next window opens on: home, or the room an invite link was for
+let firstRoute = routeFromLink(linkInArgs(process.argv)) ?? '/';
+
+// Moves to a page of the site without reloading it, so a live room stays connected
+function goTo(route) {
+  if (!mainWindow) return;
+  const url = new URL(route, START_URL).href;
+  if (waiting.has(mainWindow.id)) {
+    waiting.set(mainWindow.id, url);
+    return;
+  }
+  const { webContents } = mainWindow;
+  if (!isAppPage(webContents.getURL())) {
+    openWhenServerReady(mainWindow, url);
+    return;
+  }
+  webContents.executeJavaScript(
+    `history.pushState(null, '', ${JSON.stringify(route)}); dispatchEvent(new PopStateEvent('popstate'));`,
+  ).catch(() => {});
+}
+
+// Back and forward through the site's pages, never back onto the loading screen
+function goInHistory(step) {
+  const history = mainWindow?.webContents.navigationHistory;
+  const entry = history?.getEntryAtIndex(history.getActiveIndex() + step);
+  if (entry && isAppPage(entry.url)) history.goToOffset(step);
+}
+
+function openInBrowser() {
+  const current = mainWindow?.webContents.getURL();
+  shell.openExternal(current && isAppPage(current) ? current : START_URL.href);
+}
+
+const isAuctionRoom = (url) => isAppPage(url) && new URL(url).pathname.startsWith('/auction/');
+
+// The screen stays on while an auction room is on screen (bids can be minutes apart with
+// nobody touching the keyboard), and may sleep once you leave the room or close the window
+let screenAwakeId = null;
+function updateScreenAwake() {
+  const on = Boolean(mainWindow?.isVisible() && !mainWindow.isMinimized() && isAuctionRoom(mainWindow.webContents.getURL()));
+  if (on && screenAwakeId === null) screenAwakeId = powerSaveBlocker.start('prevent-display-sleep');
+  if (!on && screenAwakeId !== null) {
+    powerSaveBlocker.stop(screenAwakeId);
+    screenAwakeId = null;
+  }
+}
+
+// Brings the window back, from the tray, the Dock, a notification or a second launch
+function showWindow() {
+  if (!mainWindow) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  removeTray();
+  updateScreenAwake();
+}
+
+// Only tells you what you can't already see
+function notifyIfAway(title, body) {
+  if (mainWindow?.isVisible() && mainWindow.isFocused()) return;
+  notify(title, body, showWindow);
+}
+
+// The site moves from the lobby to the room when the auction starts, and from the room to
+// the results when it ends, so the page change itself says what happened
+let lastPath = '';
+function onPageChange(url) {
+  updateScreenAwake();
+  const pagePath = isAppPage(url) ? new URL(url).pathname : '';
+  const [, from, fromCode] = lastPath.match(/^\/(lobby|auction)\/(\w+)/) ?? [];
+  const [, to, toCode] = pagePath.match(/^\/(auction|summary)\/(\w+)/) ?? [];
+  lastPath = pagePath;
+  if (!from || fromCode !== toCode) return;
+  if (from === 'lobby' && to === 'auction') notifyIfAway('The auction has started', `Room ${toCode} is live.`);
+  if (from === 'auction' && to === 'summary') notifyIfAway('The auction has ended', `See the results for room ${toCode}.`);
+}
+
+// Closing the window during a live auction keeps you in the room, because leaving by accident
+// would lose your turn to bid. Anywhere else, closing simply closes.
+let quitting = false;
+let toldAboutTray = false;
+
+function stayInAuction() {
+  // Not every Linux desktop shows tray icons, and a hidden window could never come back there
+  if (process.platform === 'linux') {
+    mainWindow.minimize();
+  } else {
+    mainWindow.hide();
+    showTray({ onOpen: showWindow, onQuit: () => app.quit() });
+  }
+  updateScreenAwake();
+  if (toldAboutTray) return;
+  toldAboutTray = true;
+  const whereToLook = { darwin: 'the menu bar icon', win32: 'the taskbar tray icon' }[process.platform] ?? 'the app in your taskbar';
+  notify('Still in the auction', `You're still in the room. Use ${whereToLook} to come back, or quit to leave.`, showWindow);
+}
+
+// Google refuses to sign in inside app windows, so "Continue with Google" signs in through the
+// person's own browser. The app keeps a fresh secret (the verifier) and sends the server only
+// its fingerprint (the challenge). The browser comes back with a one-time code on an
+// auctionarena://signed-in link, and the site trades code + secret for a session. Without the
+// secret the code is useless, and a link nobody here asked for is ignored.
+const GOOGLE_SIGN_IN_WAIT_MS = 10 * 60 * 1000; // as long as the server keeps it open
+let googleSignIn = null; // the sign-in waiting for its link: { verifier, finish }
+
+// Resolves with { code, verifier }, or { error } when it can't finish: 'restarted' (asked
+// again), 'expired', 'closed' (the window closed) or 'no-browser'
+function signInWithGoogle() {
+  googleSignIn?.finish({ error: 'restarted' });
+  const verifier = crypto.randomBytes(32).toString('base64url');
+  const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
+  return new Promise((resolve) => {
+    let timer;
+    const pending = {
+      verifier,
+      finish(result) {
+        clearTimeout(timer);
+        if (googleSignIn === pending) googleSignIn = null;
+        resolve(result);
+      },
+    };
+    timer = setTimeout(() => pending.finish({ error: 'expired' }), GOOGLE_SIGN_IN_WAIT_MS);
+    googleSignIn = pending;
+    const start = new URL('/api/auth/google/desktop', START_URL);
+    start.searchParams.set('challenge', challenge);
+    shell.openExternal(start.href).catch(() => pending.finish({ error: 'no-browser' }));
+  });
+}
+
+function finishGoogleSignIn(code) {
+  if (!googleSignIn) return;
+  const { verifier, finish } = googleSignIn;
+  finish({ code, verifier });
+  showWindow();
+}
+
+// An auctionarena:// link was opened: show that room in the window, or open a window on it
+function openLink(link) {
+  const signInCode = signInCodeFromLink(link);
+  if (signInCode) {
+    finishGoogleSignIn(signInCode);
+    return;
+  }
+  const route = routeFromLink(link);
+  if (!route) return;
+  if (!mainWindow) {
+    firstRoute = route;
+    if (app.isReady()) createWindow(); // macOS keeps running after its last window closes
+    return;
+  }
+  showWindow();
+  goTo(route);
+}
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1360,
+    height: 860,
+    minWidth: 900,
+    minHeight: 600,
+    title: 'Auction Arena',
+    icon: ICON_PATH,
+    backgroundColor: '#05070f',
+    show: false,
+    webPreferences: {
+      preload: path.join(import.meta.dirname, 'preload.cjs'),
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      // A live auction keeps running at full speed behind other windows: Chromium would
+      // otherwise slow the page's timers there (down to once a minute after a while),
+      // and the countdown and the voice auctioneer would fall behind the room
+      backgroundThrottling: false,
+      // Sound needs no click first: the countdown, anthems and voice auctioneer work as soon
+      // as a room opens, even straight after a reload (Electron's default, kept on purpose)
+      autoplayPolicy: 'no-user-gesture-required',
+    },
+  });
+  const { webContents } = mainWindow;
+
+  // A link meant for a new tab: the site's own pages stay in this window, others go outside
+  webContents.setWindowOpenHandler(({ url }) => {
+    if (isAppPage(url)) webContents.loadURL(url);
+    else openOutside(url);
+    return { action: 'deny' };
+  });
+  const keepInside = (event, url) => {
+    if (isAppPage(url)) return;
+    event.preventDefault();
+    openOutside(url);
+  };
+  webContents.on('will-navigate', keepInside);
+  webContents.on('will-redirect', keepInside);
+
+  // A page of the site didn't load (offline, or the server fell asleep): wait, then retry it
+  webContents.on('did-fail-load', (_event, errorCode, _description, url, isMainFrame) => {
+    const aborted = errorCode === -3; // a navigation replaced by another one
+    if (isMainFrame && !aborted && isAppPage(url)) openWhenServerReady(mainWindow, url);
+  });
+
+  // Both full page loads and the site's own page changes
+  webContents.on('did-navigate', (_event, url) => onPageChange(url));
+  webContents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
+    if (isMainFrame) onPageChange(url);
+  });
+
+  mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.on('minimize', updateScreenAwake);
+  mainWindow.on('restore', updateScreenAwake);
+  mainWindow.on('close', (event) => {
+    if (quitting || !isAuctionRoom(webContents.getURL())) return;
+    event.preventDefault();
+    stayInAuction();
+  });
+  // Windows shutting down must not be held up by the window staying open
+  mainWindow.on('session-end', () => {
+    quitting = true;
+  });
+  mainWindow.on('closed', () => {
+    googleSignIn?.finish({ error: 'closed' });
+    mainWindow = null;
+    lastPath = '';
+    updateScreenAwake();
+    removeTray();
+  });
+  openWhenServerReady(mainWindow, new URL(firstRoute, START_URL).href);
+  firstRoute = '/';
+}
+
+// Chromium on Linux speaks (the voice auctioneer) only through speech-dispatcher, which it
+// leaves off unless asked. The system needs speech-dispatcher installed, as most desktops have.
+if (process.platform === 'linux') app.commandLine.appendSwitch('enable-speech-dispatcher');
+
+// One copy of the app at a time: opening it again brings the open window forward, and an
+// invite link opened on Windows or Linux arrives here from the copy that was started for it
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', (_event, argv) => {
+    const link = linkInArgs(argv);
+    if (link) openLink(link);
+    else showWindow();
+  });
+
+  app.on('before-quit', () => {
+    quitting = true;
+  });
+
+  // Only the site's own page, in the app's window, may ask the app for anything
+  const fromSite = (event) => event.senderFrame === mainWindow?.webContents.mainFrame && isAppPage(event.senderFrame.url);
+
+  // A notification from the site (being outbid). The main process decides whether it's shown.
+  ipcMain.on('desktop:notify', (event, title, body) => {
+    if (!fromSite(event) || typeof title !== 'string' || typeof body !== 'string') return;
+    notifyIfAway(title.slice(0, 100), body.slice(0, 200));
+  });
+
+  // "Continue with Google" on the site, which signs in through the browser
+  ipcMain.handle('desktop:google-sign-in', (event) => (fromSite(event) ? signInWithGoogle() : { error: 'refused' }));
+
+  // macOS hands invite links to the running app, even while it's still starting up
+  app.on('open-url', (event, link) => {
+    event.preventDefault();
+    openLink(link);
+  });
+
+  // No page may embed other web content in a <webview>
+  app.on('web-contents-created', (_event, contents) => {
+    contents.on('will-attach-webview', event => event.preventDefault());
+  });
+
+  app.whenReady().then(() => {
+    lockDownSession();
+    app.setAboutPanelOptions({
+      applicationName: 'Auction Arena',
+      applicationVersion: app.getVersion(),
+      credits: 'Live IPL auctions with friends',
+      website: PRODUCTION_URL,
+      iconPath: ICON_PATH,
+    });
+    // An installed app has its icon built in; while developing, the Dock shows Electron's
+    if (process.platform === 'darwin' && !app.isPackaged) app.dock?.setIcon(ICON_PATH);
+    // The installed app answers auctionarena:// links. A development copy doesn't register,
+    // so it never takes links away from the installed app.
+    if (app.isPackaged) app.setAsDefaultProtocolClient(PROTOCOL);
+    // Notifications on Windows belong to this id, which the installer gives the app too
+    if (process.platform === 'win32') app.setAppUserModelId('com.auctionarena.desktop');
+    buildMenu({ goTo, goBack: () => goInHistory(-1), goForward: () => goInHistory(1), openInBrowser, checkForUpdates: checkForUpdatesNow });
+    createWindow();
+    startUpdateChecks();
+    // Clicking the Dock icon on macOS brings back a hidden window, or opens a new one
+    app.on('activate', showWindow);
+    // Linux and macOS shutting down must not be held up by the window staying open
+    powerMonitor.on('shutdown', () => {
+      quitting = true;
+      app.quit();
+    });
+  });
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit();
+  });
+}

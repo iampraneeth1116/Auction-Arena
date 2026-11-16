@@ -61,6 +61,7 @@ Claim a franchise, bid against each other on 500+ real players, let bots fill th
 - Signing in (Google, email or guest) sets two **httpOnly cookies**: a 15-minute JWT access token and a 7-day refresh token. JavaScript on the page can never read either.
 - The refresh token is random, stored only as a SHA-256 hash, and **rotated on every use**. An old refresh token that comes back later ends all of that user's sessions.
 - Google sign-in uses the popup code flow: the server exchanges the code and verifies Google's ID token.
+- The desktop app signs in with Google in the person's own browser, since Google refuses app windows. The app keeps a random secret and sends only its SHA-256; the browser comes back from Google with a one-time code (5 minutes) that only that secret can redeem, so a code that turns up anywhere else is useless.
 - The fantasy admin page is limited to the Google account set in `ADMIN_EMAIL`.
 
 ### How bots bid
@@ -114,7 +115,7 @@ npm run db:deploy
 openssl rand -hex 48   # paste the output into JWT_SECRET
 ```
 
-For Google sign-in: [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → **Create credentials → OAuth client ID → Web application**. Add `http://localhost:5173` under **Authorized JavaScript origins**, then copy the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+For Google sign-in: [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → **Create credentials → OAuth client ID → Web application**. Add `http://localhost:5173` under **Authorized JavaScript origins** (and `http://localhost:5173/api/auth/google/desktop/callback` under **Authorized redirect URIs** to try desktop sign-in locally), then copy the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
 
 For AI power rankings: [console.groq.com](https://console.groq.com/keys) → **API Keys → Create API Key**, and paste it into `GROQ_API_KEY`. `GROQ_MODEL` is optional; the default is `openai/gpt-oss-120b`.
 
@@ -137,7 +138,7 @@ Open http://localhost:5173.
 | --- | --- |
 | `npm run dev` / `npm run dev:server` | Frontend and backend in development |
 | `npm run build` / `npm start` | Build the React app, then serve everything from one Node process |
-| `npm run lint` | ESLint over the app, server, scripts and tests |
+| `npm run lint` | ESLint over the app, server, scripts, tests and desktop app |
 | `npm run db:migrate` | Create a migration after editing `prisma/schema.prisma` |
 | `npm run db:deploy` | Apply migrations to the database in `DATABASE_URL` |
 | `npm run fantasy:update` | Score IPL matches finished since the last run (daily job) |
@@ -152,6 +153,7 @@ Open http://localhost:5173.
 - **`tests/auction.e2e.mjs`** — sign-up and sessions, rooms and the live lobby, chat, host controls, spectators and latecomers, bidding, pause/resume, a server restart mid-auction, squad/overseas/purse rules, the fantasy league and its admin, and fantasy scoring.
 - **`tests/arena.e2e.mjs`** — modes and player pools, room options, open rooms, history and the Just sold strip, best-XI judging, and a full auction run by bots.
 - **`tests/power-rankings.e2e.mjs`** — AI power rankings against a fake Groq server, including deliberately messy model output.
+- **`tests/desktop-sign-in.e2e.mjs`** — the desktop app's Google sign-in in the browser against a stand-in for Google (`tests/fakeGoogle.mjs`, loaded only into the test server): the trip to Google and back, the one-time code and the app's secret, every error the return page shows, and the website's own Google popup.
 
 No Google, Groq or Giphy keys are needed. The tests write users, rooms and purchases to the database in `DATABASE_URL`, so run them against a local database (the Docker setup above) after `npm run db:deploy`. They refuse to run against a non-local database unless you set `ALLOW_REMOTE_TEST_DB=1`.
 
@@ -167,11 +169,54 @@ The Node server serves the built React app, the API and Socket.IO from one domai
 - **Start command:** `npm start`
 - **Health check path:** `/api/health` (it also checks the database answers)
 - **Environment:** `NODE_ENV=production`, `DATABASE_URL`, `JWT_SECRET` (new random value), `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `ADMIN_EMAIL`, `GROQ_API_KEY`, `VITE_GIPHY_API_KEY`, and optionally `VITE_CONTACT_EMAIL` (shown on the privacy page)
-- Add your Render URL to the Google OAuth client's **Authorized JavaScript origins**.
+- Add your Render URL to the Google OAuth client's **Authorized JavaScript origins**, and `<your Render URL>/api/auth/google/desktop/callback` to its **Authorized redirect URIs** (for Google sign-in in the desktop app).
 
 Run a single instance: live auction state is held in the server's memory (and saved to Postgres after every change).
 
 **Daily fantasy job:** add `DATABASE_URL` and `CRICKET_API_KEY` under the repo's **Settings → Secrets and variables → Actions**. Without them the job skips quietly.
+
+## 🖥 Desktop app
+
+`desktop/` is an Electron app that opens the live site in its own window. The pages, API and live rooms stay on the server, so every deploy reaches the app at once. It has its own `package.json`, so the website's install and build never download Electron.
+
+```bash
+cd desktop
+npm install
+npm start          # opens the live site
+npm run local      # opens http://localhost:5173 instead, to try changes first
+```
+
+`npm start -- --url=<address>` opens another server (https, or a localhost address).
+
+The window only ever shows the site itself: links to other sites open in your browser, the page has no Node.js access (context isolation and the sandbox are on), and it may only ask for notifications, the clipboard and full screen.
+
+Until the server answers `/api/health`, the app shows its own loading screen instead of a blank window or Render's wake-up page: "Waking up the server" while a sleeping free-plan server starts, "No internet connection" when offline. It keeps checking and opens the site as soon as the server is up, and does the same if a page later fails to load. The menu bar adds **Go** (Home, Back, Forward) and **Help** (How to Play, Privacy Policy, Open in Your Browser); these move around the site without reloading it, so a live room stays connected. The app icon is drawn in `desktop/assets/icon.svg` and rendered to `icon.png` (1024 px).
+
+**During an auction:** sound needs no click first (countdown beeps, anthems and the voice auctioneer work as soon as a room opens, even right after a reload), the screen stays awake while an auction room is open and may sleep again once you leave it, and the page keeps full-speed timers behind other windows. On Linux the app turns on speech-dispatcher for the voice auctioneer (most desktops have it installed).
+
+**While you're away:** when the window isn't in front, a native notification says the auction has started, that you've been outbid, or that it has ended; clicking one brings the window back. If macOS refuses to show it, the Dock icon bounces instead. Closing the window during a live auction doesn't leave the room: the window hides, a tray icon appears, and you can still hear the room and be notified. Use the tray icon to come back or to leave and quit. On Linux the window minimises instead, because not every desktop shows tray icons. Anywhere else, closing simply closes.
+
+**Google sign-in:** Google refuses to sign in inside app windows, so **Continue with Google** opens your browser instead. Sign in there, let the browser open Auction Arena, and the app is signed in; the page in the browser can then be closed. Behind it: the app makes a random secret and opens `/api/auth/google/desktop` with its SHA-256, the server sends the browser to Google and back to its callback, and the return page `/desktop-sign-in` hands a one-time code to the app on `auctionarena://signed-in?code=…`. The app then trades code + secret for the usual session cookies. The code lasts 5 minutes and works once, only with that secret, and the app ignores a sign-in link it didn't ask for. Email and guest sign-in work in the app as on the site.
+
+**Invite links:** `auctionarena://lobby/AB12CD` opens that lobby in the app (also `auction/` and `summary/`, and `?watch=1` to watch), whether the app is closed, open, or open with no window. Any other `auctionarena://` link is ignored, so a link from a website can only land on one of those pages. In a desktop browser, the signed-out invite card offers "Have the desktop app? Open this room in it". Only the installed app registers for these links (a development copy doesn't, so it never takes them over); try one in development with `npm start -- auctionarena://lobby/AB12CD`.
+
+### Installers
+
+```bash
+cd desktop
+npm run dist:mac     # Auction-Arena-<version>-mac-arm64.dmg and -mac-x64.dmg
+npm run dist         # the installers for the system you're on
+npx electron-builder --win    # Windows .exe, also buildable from a Mac
+npx electron-builder --linux  # Linux .AppImage and .deb, also buildable from a Mac
+```
+
+They land in `desktop/dist/` (settings in `desktop/electron-builder.yml`). The installed app always opens the live site and ignores `--url`; it's locked with Electron fuses (no running as plain Node.js, no `NODE_OPTIONS` or debugger flags, and only its own checked app code loads).
+
+- **macOS:** ad-hoc signed, which is free and enough to run on Apple Silicon, but not notarised by Apple. After downloading, the first launch is blocked once: open **System Settings → Privacy & Security** and click **Open Anyway**.
+- **Windows:** unsigned, so SmartScreen shows "Windows protected your PC" the first time: click **More info → Run anyway**.
+- **Linux:** the `.deb` adds an Auction Arena launcher, opens `auctionarena://` links and recommends `speech-dispatcher` for the voice. The `.AppImage` runs without installing, but links only open in it if your desktop integrates AppImages.
+- **Releases and updates:** set `"version"` in `desktop/package.json`, commit, then `git tag v0.2.0 && git push origin v0.2.0`. The **Desktop release** workflow builds the installers on GitHub's macOS, Windows and Linux machines into a draft release and publishes it once all three have uploaded. People download the app from the repo's **Releases** page. The installed app checks there at start and every 6 hours (or **Help → Check for Updates**): Windows and the Linux AppImage download the new version in the background and install it when you quit, never mid-auction; macOS (an app can only replace itself there once Apple has signed it) and the `.deb` get a notification with a download link instead.
+- **Building on a Mac inside iCloud Drive** (an iCloud-synced Desktop or Documents folder): iCloud tags the files and Apple's `codesign` then refuses them ("resource fork, Finder information, or similar detritus not allowed"). Build into a folder iCloud doesn't sync: `npm run dist:mac -- --config.directories.output="$HOME/Library/Caches/auction-arena-desktop-build"`.
 
 ## 📂 Project Structure
 
@@ -188,11 +233,11 @@ auction-arena/
 │   │   ├── roomManager.js     # Auction engine: timers, bid checks, sales, bots, spectators, open rooms
 │   │   └── socket.js          # Socket.IO events
 │   ├── routes/                # /api/auth, rooms & history, fantasy & admin, power rankings, activity
-│   ├── auth/                  # JWT + refresh-token sessions, cookie auth middleware
+│   ├── auth/                  # JWT + refresh-token sessions, cookie auth middleware, desktop Google sign-in
 │   └── ai/groq.js             # Groq client (structured JSON output)
 ├── scripts/                   # Fantasy-points jobs in scripts/fantasy (daily update, season backfill, seeding totals); shared scoring in scripts/lib
 ├── src/
-│   ├── pages/                 # Home, Lobby, AuctionRoom, Results, HowToPlay, PrivacyPolicy, FantasyAdmin, NotFound
+│   ├── pages/                 # Home, Lobby, AuctionRoom, Results, HowToPlay, PrivacyPolicy, FantasyAdmin, DesktopSignIn, NotFound
 │   ├── components/
 │   │   ├── ui/                # Design system: panels, buttons, tags, crests, ratings, modals, ticker, toasts
 │   │   ├── auction/           # The live room: lot card, price board, bid console, team board, feed
@@ -200,6 +245,7 @@ auction-arena/
 │   ├── hooks/                 # useAuth, useAuction, voice auctioneer, room sounds, local settings
 │   ├── lib/                   # API and socket clients, Arena Rating, best-XI judging, batting orders, formatting, image sharing
 │   └── data/                  # Players, playing profiles, next-IPL outlook, IPL match counts and 2026 numbers, teams
+├── desktop/                   # Electron app that opens the live site (own package.json)
 ├── tests/                     # End-to-end tests (npm test)
 └── .github/workflows/         # CI, and the daily fantasy update
 ```

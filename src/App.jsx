@@ -15,6 +15,7 @@ const Results = lazy(() => import('./pages/Results'));
 const FantasyAdmin = lazy(() => import('./pages/FantasyAdmin'));
 const HowToPlay = lazy(() => import('./pages/HowToPlay'));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
+const DesktopSignIn = lazy(() => import('./pages/DesktopSignIn'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -39,6 +40,7 @@ function App() {
                   <Route path="/summary/:id" element={<Results />} />
                   <Route path="/guide" element={<HowToPlay />} />
                   <Route path="/privacy" element={<PrivacyPolicy />} />
+                  <Route path="/desktop-sign-in" element={<DesktopSignIn />} />
                   <Route path="/admin/fantasy" element={<FantasyAdmin />} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
