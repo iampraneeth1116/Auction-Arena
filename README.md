@@ -11,6 +11,11 @@ Claim a franchise, bid against each other on 500+ real players, let bots fill th
 </p>
 
 <p align="center">
+  <a href="https://github.com/iampraneeth1116/Auction-Arena/releases/latest"><b>⬇ Download the desktop app</b></a> for macOS, Windows and Linux<br>
+  <sub>Free and unsigned, so the first launch needs one extra click: see <a href="#-desktop-app">Desktop app</a>.</sub>
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/React-19-20232A?logo=react&logoColor=61DAFB" alt="React 19">
   <img src="https://img.shields.io/badge/Node.js-24_LTS-339933?logo=node.js&logoColor=white" alt="Node.js 24">
   <img src="https://img.shields.io/badge/Socket.IO-4-010101?logo=socket.io&logoColor=white" alt="Socket.IO 4">
@@ -176,6 +181,8 @@ Run a single instance: live auction state is held in the server's memory (and sa
 **Daily fantasy job:** add `DATABASE_URL` and `CRICKET_API_KEY` under the repo's **Settings → Secrets and variables → Actions**. Without them the job skips quietly.
 
 ## 🖥 Desktop app
+
+**Download:** the latest installers are on the [Releases page](https://github.com/iampraneeth1116/Auction-Arena/releases/latest): `.dmg` for macOS (Apple Silicon `arm64` or Intel `x64`), `.exe` for Windows, `.AppImage` or `.deb` for Linux. The installed app checks there for updates.
 
 `desktop/` is an Electron app that opens the live site in its own window. The pages, API and live rooms stay on the server, so every deploy reaches the app at once. It has its own `package.json`, so the website's install and build never download Electron.
 
