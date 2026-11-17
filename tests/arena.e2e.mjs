@@ -5,7 +5,7 @@
 import { TestClient, createChecker, startServer } from './helpers.mjs';
 import { prisma } from '../server/db.js';
 import { IPL_PLAYERS } from '../src/data/players.js';
-import { AUCTION_MODES, PLAYER_MIXES, QUICK_TIER_FLOORS, RATINGS, buildPlayerOrder, incompletePenalty, isOverseas, planUnsoldRound } from '../server/auctionRules.js';
+import { AUCTION_MODES, PLAYER_MIXES, RATINGS, buildPlayerOrder, incompletePenalty, isOverseas, planUnsoldRound } from '../server/auctionRules.js';
 import { pickBotXI } from '../server/bots.js';
 import { teamStrength, xiOverseasCap } from '../src/lib/catalog.js';
 import { profileOf } from '../src/lib/playerProfile.js';
@@ -203,8 +203,7 @@ try {
   const evenly = (counts) => TIERS.every(tier => counts[tier] >= 3 && counts[tier] <= 5);
   const twoTeams = { franchises: 2, squadLimit: 5, overseasLimit: 2 };
   const topPool = tierCounts(buildPlayerOrder('sprint5', { squads: twoTeams, quickPool: true }));
-  check('a top-players quick pool of 20 is Elite and Star but for 4 Solid, 3 Squad and 1 Prospect',
-    topPool.elite + topPool.star === 12 && topPool.solid === 4 && topPool.squad === 3 && topPool.prospect === 1, JSON.stringify(topPool));
+  check('a top-players pool of 20 is all Elite and Star', topPool.elite + topPool.star === 20, JSON.stringify(topPool));
   let evenDraws = 0;
   let safeDraws = 0;
   for (let draw = 0; draw < 25; draw++) {
@@ -242,7 +241,6 @@ try {
   ];
   let regularDraws = 0;
   let quickSafeDraws = 0;
-  let tierFloorDraws = 0;
   for (let draw = 0; draw < 10; draw++) {
     for (const [mode, squads] of quickCases) {
       for (const mix of PLAYER_MIXES) {
@@ -253,17 +251,12 @@ try {
         const keepers = indians.filter(index => IPL_PLAYERS[index].role === 'Wicket-Keeper').length >= squads.franchises;
         if (order.length === squads.franchises * squads.squadLimit + 10 && order.every(regular)) regularDraws++;
         if (enoughIndians && keepers) quickSafeDraws++;
-        if (mix === 'stars') {
-          const inTier = (tier) => order.filter(index => ratingTier(RATINGS.get(IPL_PLAYERS[index].id)) === tier).length;
-          if (Object.entries(QUICK_TIER_FLOORS).every(([tier, share]) => inTier(tier) >= Math.ceil(share * order.length))) tierFloorDraws++;
-        }
       }
     }
   }
   const quickDraws = 10 * quickCases.length * PLAYER_MIXES.length;
   check('every quick pool is drawn only from players with 5+ IPL 2026 matches', regularDraws === quickDraws, `${regularDraws}/${quickDraws} draws`);
   check('a quick pool still has enough Indians and an Indian keeper per franchise', quickSafeDraws === quickDraws, `${quickSafeDraws}/${quickDraws} draws`);
-  check('a top-players quick pool keeps 20% Solid, 15% Squad and 5% Prospect players', tierFloorDraws === quickDraws / PLAYER_MIXES.length, `${tierFloorDraws}/${quickDraws / PLAYER_MIXES.length} draws`);
   // Mega's 25-player squads need more players than that: its quick pool is drawn as before
   let megaAsBefore = 0;
   for (let draw = 0; draw < 10; draw++) {

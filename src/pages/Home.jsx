@@ -543,7 +543,7 @@ const HostTab = () => {
           checked={quickPool}
           onChange={setQuickPool}
           label="Quick pool"
-          description={`Players auctioned = franchises playing × ${squadSize} squad slots + 10 spares${MODE_META[mode].quickRegulars ? `, drawn from players with 5+ IPL 2026 matches${balanced ? '' : ' (at least 20% Solid, 15% Squad and 5% Prospect)'}` : ''}. With all ten teams that's ${auctionPoolSize({ auctionType: mode, quickPool: true, franchises: 10, squadLimit: squadSize })}, instead of ${auctionPoolSize({ auctionType: mode, quickPool: false })}.`}
+          description={`Players auctioned = franchises playing × ${squadSize} squad slots + 10 spares${MODE_META[mode].quickRegulars ? ', drawn from players with 5+ IPL 2026 matches' : ''}. With all ten teams that's ${auctionPoolSize({ auctionType: mode, quickPool: true, franchises: 10, squadLimit: squadSize })}, instead of ${auctionPoolSize({ auctionType: mode, quickPool: false })}.`}
         />
         {/* Only a pool shorter than the full list is drawn, so only then does the mix matter */}
         {(quickPool || MODE_META[mode].pool) && (

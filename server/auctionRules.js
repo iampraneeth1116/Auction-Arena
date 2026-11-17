@@ -115,19 +115,16 @@ function pickByRole(candidates, places, chosen) {
 // are in the pool. Players the pool is drawn from (eligible) come in first and go
 // out last. balanced: each swap takes the wanted player rated closest to the one
 // going instead, so the pool stays balanced.
-// protect: players who go out only once nobody else can (a tier's guaranteed share)
-function ensureAtLeast(chosen, min, wanted, canGo, { eligible, balanced, protect = () => false }) {
+function ensureAtLeast(chosen, min, wanted, canGo, { eligible, balanced }) {
   let have = [...chosen].filter(index => wanted(IPL_PLAYERS[index])).length;
   if (have >= min) return;
   const scored = (index) => ({ index, score: RATINGS.get(IPL_PLAYERS[index].id) + Math.random() * 25 });
   const marqueeLast = (index) => (isMarquee(IPL_PLAYERS[index]) ? 1 : 0);
   const outside = (index) => (eligible(IPL_PLAYERS[index]) ? 0 : 1);
-  const protectedLast = (index) => (protect(IPL_PLAYERS[index]) ? 1 : 0);
   const removable = [...chosen]
     .filter(index => canGo(IPL_PLAYERS[index]))
     .map(scored)
-    .sort((a, b) => outside(b.index) - outside(a.index) || protectedLast(a.index) - protectedLast(b.index)
-      || marqueeLast(a.index) - marqueeLast(b.index) || a.score - b.score);
+    .sort((a, b) => outside(b.index) - outside(a.index) || marqueeLast(a.index) - marqueeLast(b.index) || a.score - b.score);
   const available = IPL_PLAYERS
     .map((player, index) => index)
     .filter(index => !chosen.has(index) && wanted(IPL_PLAYERS[index]))
@@ -164,11 +161,6 @@ const playedThisSeason = (player) => ipl2026MatchesOf(player.id) >= MIN_2026_MAT
 const experienced = (player) => iplMatchesOf(player.id) >= MIN_IPL_MATCHES;
 const anyone = () => true;
 
-// A quick pool of this season's regulars drawn from the top players still keeps at least
-// these shares for the lower rating tiers: every one of them played this season, so they
-// belong in it too. The rest of the pool comes from the top-rated as usual.
-export const QUICK_TIER_FLOORS = { solid: 0.2, squad: 0.15, prospect: 0.05 };
-
 // Balanced: the places are shared equally between the rating tiers (Elite, Star, Solid,
 // Squad player, Prospect), each tier's share drawn at random in its own mix of roles.
 // Smaller tiers go first, so a tier with too few players hands its spare places on.
@@ -186,33 +178,6 @@ function pickBalanced(candidates, poolSize, chosen) {
     pickByRole(indices, share, chosen);
     placesLeft -= share;
   });
-}
-
-// Brings every tier with a guaranteed share (floors: tier -> share of the pool) up to it,
-// swapping in random players of that tier for random ones from the tiers without a share.
-// Each swap keeps the role and the nationality where it can, so the pool keeps its size,
-// its mix of roles, its Indians and its Indian keepers. A tier already above its share
-// keeps what it drew.
-function ensureTierShares(chosen, poolSize, candidates, floors) {
-  const tier = (index) => ratingTier(RATINGS.get(IPL_PLAYERS[index].id));
-  const role = (index) => IPL_PLAYERS[index].role;
-  const overseas = (index) => isOverseas(IPL_PLAYERS[index]);
-  const indianKeeper = (index) => !overseas(index) && role(index) === 'Wicket-Keeper';
-  for (const [floorTier, share] of Object.entries(floors)) {
-    const missing = Math.ceil(share * poolSize) - [...chosen].filter(index => tier(index) === floorTier).length;
-    if (missing <= 0) continue;
-    const incoming = shuffle(candidates.filter(index => !chosen.has(index) && tier(index) === floorTier)).slice(0, missing);
-    for (const index of incoming) {
-      const canGo = shuffle([...chosen].filter(i => !(tier(i) in floors)));
-      const out = canGo.find(i => role(i) === role(index) && overseas(i) === overseas(index))
-        ?? canGo.find(i => overseas(i) === overseas(index) && !indianKeeper(i))
-        ?? canGo.find(i => role(i) === role(index))
-        ?? canGo[0];
-      if (out === undefined) return;
-      chosen.delete(out);
-      chosen.add(index);
-    }
-  }
 }
 
 // A pool bigger than everyone it's drawn from (Mega's balanced quick pool with all ten
@@ -242,7 +207,6 @@ function pickPool(poolSize, { franchises, minIndians, mix, regularsOnly }) {
   const balanced = mix === 'balanced';
   const eligible = regularsOnly ? playedThisSeason : balanced ? experienced : anyone;
   const candidates = IPL_PLAYERS.map((player, index) => index).filter(index => eligible(IPL_PLAYERS[index]));
-  const floors = regularsOnly && !balanced ? QUICK_TIER_FLOORS : {};
   if (balanced) {
     pickBalanced(candidates, poolSize, chosen);
   } else {
@@ -253,19 +217,8 @@ function pickPool(poolSize, { franchises, minIndians, mix, regularsOnly }) {
   }
   topUp(poolSize, chosen);
   const indian = (player) => !isOverseas(player);
-  const indianKeepers = (protect) =>
-    ensureAtLeast(chosen, franchises, p => indian(p) && p.role === 'Wicket-Keeper', p => p.role === 'Batsman', { eligible, balanced, protect });
-  const enoughIndians = (protect) => ensureAtLeast(chosen, minIndians, indian, isOverseas, { eligible, balanced, protect });
-  indianKeepers();
-  enoughIndians();
-  if (Object.keys(floors).length > 0) {
-    ensureTierShares(chosen, poolSize, candidates, floors);
-    // Those swaps keep the Indians and keepers where they can; if one couldn't, put it
-    // right again, taking the lower tiers' players out last
-    const lowerTier = (player) => ratingTier(RATINGS.get(player.id)) in floors;
-    indianKeepers(lowerTier);
-    enoughIndians(lowerTier);
-  }
+  ensureAtLeast(chosen, franchises, p => indian(p) && p.role === 'Wicket-Keeper', p => p.role === 'Batsman', { eligible, balanced });
+  ensureAtLeast(chosen, minIndians, indian, isOverseas, { eligible, balanced });
   return chosen;
 }
 

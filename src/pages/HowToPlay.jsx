@@ -523,9 +523,7 @@ const Modes = () => (
       Classic 11 means 4 × 11 + 10 = 54 players, ten franchises in Mega means 260 instead of {FULL_LIST}. The count is
       made when the host presses Start. In Classic 11 and Sprint 5 a quick pool only draws this season&rsquo;s
       regulars, players with at least 5 IPL 2026 matches, from the top or every tier equally with Balanced player mix.
-      Drawn from the top, it still keeps at least 20% Solid, 15% Squad and 5% Prospect players, since every one of them
-      played this season. Mega&rsquo;s 25-player squads need more players than that, so its quick pool is drawn like
-      any shorter pool.
+      Mega&rsquo;s 25-player squads need more players than that, so its quick pool is drawn like any shorter pool.
     </Note>
   </Section>
 );

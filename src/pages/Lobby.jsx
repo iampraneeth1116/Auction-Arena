@@ -352,7 +352,7 @@ const HostControls = ({
           onChange={onQuickPool}
           disabled={Boolean(busy)}
           label="Quick pool"
-          description={`Players auctioned = ${managedCount} franchise${managedCount === 1 ? '' : 's'} × ${room.squadLimit} squad slots + 10 spares = ${auctionPoolSize({ auctionType: room.auctionType, quickPool: true, franchises: managedCount, squadLimit: room.squadLimit })}, instead of ${auctionPoolSize({ auctionType: room.auctionType, quickPool: false })}${MODE_META[room.auctionType]?.quickRegulars ? `, drawn from players with 5+ IPL 2026 matches${room.playerMix === 'balanced' ? '' : ' (at least 20% Solid, 15% Squad and 5% Prospect)'}` : ''}. Counted when you press Start.`}
+          description={`Players auctioned = ${managedCount} franchise${managedCount === 1 ? '' : 's'} × ${room.squadLimit} squad slots + 10 spares = ${auctionPoolSize({ auctionType: room.auctionType, quickPool: true, franchises: managedCount, squadLimit: room.squadLimit })}, instead of ${auctionPoolSize({ auctionType: room.auctionType, quickPool: false })}${MODE_META[room.auctionType]?.quickRegulars ? ', drawn from players with 5+ IPL 2026 matches' : ''}. Counted when you press Start.`}
         />
         {shorterPool && (
           <Toggle
@@ -470,7 +470,7 @@ const playerMixText = (room) => {
   if (room.quickPool && MODE_META[room.auctionType]?.quickRegulars) {
     return room.playerMix === 'balanced'
       ? 'Balanced: every rating tier equally, 5+ IPL 2026 matches each'
-      : 'Top-rated players with 5+ IPL 2026 matches, at least 20% Solid, 15% Squad and 5% Prospect';
+      : 'The top-rated players with 5+ IPL 2026 matches';
   }
   return room.playerMix === 'balanced' ? 'Balanced: every rating tier equally, 7+ IPL matches each' : 'Drawn from the top-rated players';
 };
