@@ -33,4 +33,6 @@ export const config = {
   groqBaseUrl: (process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1').replace(/\/$/, ''),
   // How long a paused auction waits for a host who lost connection before carrying on without them
   hostAwayLimitMs: Number(process.env.HOST_AWAY_LIMIT_MS) || 3 * 60 * 1000,
+  // The desktop app's newest release: the same address the app checks for updates
+  desktopReleaseUrl: process.env.DESKTOP_RELEASE_URL || 'https://github.com/iampraneeth1116/Auction-Arena/releases/latest',
 };

@@ -11,6 +11,7 @@ import roomRoutes from './routes/rooms.js';
 import powerRankingRoutes from './routes/powerRankings.js';
 import fantasyRoutes from './routes/fantasy.js';
 import activityRoutes from './routes/activity.js';
+import desktopRoutes from './routes/desktop.js';
 import { createSocketServer } from './realtime/socket.js';
 
 const app = express();
@@ -34,6 +35,7 @@ app.use('/api', roomRoutes);
 app.use('/api', powerRankingRoutes);
 app.use('/api', fantasyRoutes);
 app.use('/api', activityRoutes);
+app.use('/api', desktopRoutes);
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 
 // In production this same server hosts the built React app (one origin for everything)

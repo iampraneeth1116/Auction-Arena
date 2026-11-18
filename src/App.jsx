@@ -6,6 +6,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { AuctionProvider } from './contexts/AuctionContext';
 import ScrollToTop from './components/ScrollToTop';
 import PreShow from './components/PreShow';
+import DesktopUpdateBanner from './components/DesktopUpdateBanner';
 import Home from './pages/Home';
 
 // Everything except the landing page loads when first visited
@@ -32,6 +33,7 @@ function App() {
         <ToastProvider>
           <AuthProvider>
             <AuctionProvider>
+              <DesktopUpdateBanner />
               <Suspense fallback={<PreShow />}>
                 <Routes>
                   <Route path="/" element={<Home />} />
