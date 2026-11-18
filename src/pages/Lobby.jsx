@@ -352,7 +352,7 @@ const HostControls = ({
           onChange={onQuickPool}
           disabled={Boolean(busy)}
           label="Quick pool"
-          description={`Players auctioned = ${managedCount} franchise${managedCount === 1 ? '' : 's'} × ${room.squadLimit} squad slots + 10 spares = ${auctionPoolSize({ auctionType: room.auctionType, quickPool: true, franchises: managedCount, squadLimit: room.squadLimit })}, instead of ${auctionPoolSize({ auctionType: room.auctionType, quickPool: false })}${MODE_META[room.auctionType]?.quickRegulars ? ', drawn from players with 5+ IPL 2026 matches' : ''}. Counted when you press Start.`}
+          description={`Players auctioned = ${managedCount} franchise${managedCount === 1 ? '' : 's'} × (${room.squadLimit} squad slots + 3 spares) = ${auctionPoolSize({ auctionType: room.auctionType, quickPool: true, franchises: managedCount, squadLimit: room.squadLimit })}, instead of ${auctionPoolSize({ auctionType: room.auctionType, quickPool: false })}${MODE_META[room.auctionType]?.quickRegulars ? ', drawn from players with 5+ IPL 2026 matches' : ''}. Counted when you press Start.`}
         />
         {shorterPool && (
           <Toggle

@@ -5,7 +5,7 @@
 import { TestClient, createChecker, startServer } from './helpers.mjs';
 import { prisma } from '../server/db.js';
 import { IPL_PLAYERS } from '../src/data/players.js';
-import { AUCTION_MODES, PLAYER_MIXES, RATINGS, buildPlayerOrder, incompletePenalty, isOverseas, planUnsoldRound } from '../server/auctionRules.js';
+import { AUCTION_MODES, PLAYER_MIXES, RATINGS, buildPlayerOrder, incompletePenalty, isOverseas, planUnsoldRound, quickPoolSize } from '../server/auctionRules.js';
 import { pickBotXI } from '../server/bots.js';
 import { teamStrength, xiOverseasCap } from '../src/lib/catalog.js';
 import { profileOf } from '../src/lib/playerProfile.js';
@@ -156,7 +156,7 @@ try {
   check('unsold rounds are on by default', host.state.rotateUnsold === true && host.state.round === 1);
   check('quick pool starts', (await host.emit('auction:start', { roomId: quick })).ok);
   await host.waitFor(() => host.state.id === quick && host.state.status === 'active', 3000, 'quick pool active');
-  check('quick pool: 3 franchises × 5 + 10 = 25 players', host.state.playerOrder.length === 25 && new Set(host.state.playerOrder).size === 25, String(host.state.playerOrder.length));
+  check('quick pool: 3 franchises × (5 + 3 spares) = 24 players', quickPoolSize(3, 5) === 24 && host.state.playerOrder.length === 24 && new Set(host.state.playerOrder).size === 24, String(host.state.playerOrder.length));
   check('the quick pool is all players with 5+ IPL 2026 matches', host.state.playerOrder.every(index => ipl2026MatchesOf(IPL_PLAYERS[index].id) >= 5));
   check('the pool is fixed once the auction starts', /fixed/.test((await host.emit('settings:update', { roomId: quick, quickPool: false })).error || ''));
   check('the overseas limit is fixed once the auction starts', /fixed/.test((await host.emit('settings:update', { roomId: quick, overseasLimit: 3 })).error || ''));
@@ -168,7 +168,7 @@ try {
   await host.emit('bots:add', { roomId: quickMega });
   await host.emit('auction:start', { roomId: quickMega });
   await host.waitFor(() => host.state.id === quickMega && host.state.status === 'active', 3000, 'quick mega active');
-  check('quick pool in Mega: 10 franchises × 25 + 10 = 260 players', host.state.playerOrder.length === 260, String(host.state.playerOrder.length));
+  check('quick pool in Mega: 10 franchises × (25 + 3 spares) = 280 players', host.state.playerOrder.length === 280, String(host.state.playerOrder.length));
   await host.emit('auction:end', { roomId: quickMega });
 
   const noOverseas = await host.req('POST', '/api/rooms', { teamId: 'GT', auctionType: 'sprint11', overseasLimit: 0, rotateUnsold: false });
@@ -200,10 +200,14 @@ try {
     for (const index of order) counts[ratingTier(RATINGS.get(IPL_PLAYERS[index].id))]++;
     return counts;
   };
-  const evenly = (counts) => TIERS.every(tier => counts[tier] >= 3 && counts[tier] <= 5);
+  // Every tier within one player of an even share: 3 to 5 each in a pool of 20, 2 to 5 in a pool of 16
+  const evenly = (counts) => {
+    const share = TIERS.reduce((sum, tier) => sum + counts[tier], 0) / TIERS.length;
+    return TIERS.every(tier => counts[tier] >= Math.floor(share) - 1 && counts[tier] <= Math.ceil(share) + 1);
+  };
   const twoTeams = { franchises: 2, squadLimit: 5, overseasLimit: 2 };
   const topPool = tierCounts(buildPlayerOrder('sprint5', { squads: twoTeams, quickPool: true }));
-  check('a top-players pool of 20 is all Elite and Star', topPool.elite + topPool.star === 20, JSON.stringify(topPool));
+  check('a top-players pool of 16 is all Elite and Star', topPool.elite + topPool.star === 16, JSON.stringify(topPool));
   let evenDraws = 0;
   let safeDraws = 0;
   for (let draw = 0; draw < 25; draw++) {
@@ -213,7 +217,7 @@ try {
     // 2 squads of 5 with 2 overseas each: 6 Indian places plus half the 4 overseas ones
     if (indians.length >= 8 && indians.filter(index => IPL_PLAYERS[index].role === 'Wicket-Keeper').length >= 2) safeDraws++;
   }
-  check('a balanced pool of 20 has 3 to 5 players from every rating tier', evenDraws === 25, `${evenDraws}/25 draws`);
+  check('a balanced pool of 16 has 2 to 5 players from every rating tier', evenDraws === 25, `${evenDraws}/25 draws`);
   let experiencedDraws = 0;
   for (let draw = 0; draw < 25; draw++) {
     if (buildPlayerOrder('sprint5', { mix: 'balanced' }).every(index => iplMatchesOf(IPL_PLAYERS[index].id) >= 7)) experiencedDraws++;
@@ -223,7 +227,7 @@ try {
   check('IPL match counts are whole numbers for real players', Object.entries(IPL_MATCHES).every(([id, n]) => ids.has(id) && Number.isInteger(n) && n > 0));
   check('IPL match counts look right', iplMatchesOf('virat-kohli') > 250 && iplMatchesOf('jasprit-bumrah') > 120 && iplMatchesOf('no-such-player') === 0);
   const megaTeams = (franchises) => ({ franchises, squadLimit: 25, overseasLimit: 8 });
-  check('a balanced Mega quick pool for 10 teams still fills to 260', buildPlayerOrder('mega', { squads: megaTeams(10), quickPool: true, mix: 'balanced' }).length === 260);
+  check('a balanced Mega quick pool for 10 teams still fills to 280', buildPlayerOrder('mega', { squads: megaTeams(10), quickPool: true, mix: 'balanced' }).length === quickPoolSize(10, 25));
   check('a balanced pool still has enough Indians and an Indian keeper per franchise', safeDraws === 25, `${safeDraws}/25 draws`);
   check('the player mix only changes a shorter pool', buildPlayerOrder('mega', { mix: 'balanced' }).length === IPL_PLAYERS.length);
 
@@ -249,7 +253,7 @@ try {
         const overseasPlaces = squads.franchises * Math.min(squads.overseasLimit, squads.squadLimit);
         const enoughIndians = indians.length >= squads.franchises * squads.squadLimit - overseasPlaces + Math.ceil(overseasPlaces / 2);
         const keepers = indians.filter(index => IPL_PLAYERS[index].role === 'Wicket-Keeper').length >= squads.franchises;
-        if (order.length === squads.franchises * squads.squadLimit + 10 && order.every(regular)) regularDraws++;
+        if (order.length === quickPoolSize(squads.franchises, squads.squadLimit) && order.every(regular)) regularDraws++;
         if (enoughIndians && keepers) quickSafeDraws++;
       }
     }
@@ -262,7 +266,8 @@ try {
   for (let draw = 0; draw < 10; draw++) {
     const stars = buildPlayerOrder('mega', { squads: megaTeams(4), quickPool: true });
     const balanced = buildPlayerOrder('mega', { squads: megaTeams(4), quickPool: true, mix: 'balanced' });
-    if (stars.length === 110 && !stars.every(regular) && balanced.length === 110 && balanced.every(index => iplMatchesOf(IPL_PLAYERS[index].id) >= 7)) megaAsBefore++;
+    const size = quickPoolSize(4, 25);
+    if (stars.length === size && !stars.every(regular) && balanced.length === size && balanced.every(index => iplMatchesOf(IPL_PLAYERS[index].id) >= 7)) megaAsBefore++;
   }
   check('a Mega quick pool is drawn as before, not only from the 2026 regulars', megaAsBefore === 10, `${megaAsBefore}/10 draws`);
   const plainSprint = buildPlayerOrder('sprint11');
@@ -306,7 +311,7 @@ try {
   await host.emit('auction:start', { roomId: mixed });
   await host.waitFor(() => host.state.id === mixed && host.state.status === 'active', 3000, 'balanced room active');
   const mixedCounts = tierCounts(host.state.playerOrder);
-  check('a balanced quick pool for 2 franchises spreads its 20 players across the tiers', host.state.playerOrder.length === 20 && evenly(mixedCounts), JSON.stringify(mixedCounts));
+  check('a balanced quick pool for 2 franchises spreads its 16 players across the tiers', host.state.playerOrder.length === 16 && evenly(mixedCounts), JSON.stringify(mixedCounts));
   check('the player mix is fixed once the auction starts', /fixed/.test((await host.emit('settings:update', { roomId: mixed, playerMix: 'stars' })).error || ''));
   await host.emit('auction:end', { roomId: mixed });
   friend.disconnect();
@@ -481,8 +486,8 @@ try {
   // Back to the rounds room: every lot has been called, so round 2 should be under way
   check('unsold players come back in round 2', await eventually(roundsHost, () => roundsHost.state.round === 2, 120000, 'round 2'));
   const round2 = roundsHost.state;
-  check('round 2 brings back the 19 unsold players', round2.playerOrder.length === 20 + 19 && !round2.playerOrder.slice(20).includes(round2.playerOrder[0]), String(round2.playerOrder.length));
-  const roundAnnounced = (text) => /Round 2: 19 unsold players come back/.test(text);
+  check('round 2 brings back the 15 unsold players', round2.playerOrder.length === 16 + 15 && !round2.playerOrder.slice(16).includes(round2.playerOrder[0]), String(round2.playerOrder.length));
+  const roundAnnounced = (text) => /Round 2: 15 unsold players come back/.test(text);
   check('the new round is announced', roundsHost.events.some(e => e.event === 'chat:message' && roundAnnounced(e.payload.text)) || roundsHistory.some(m => roundAnnounced(m.text)));
   await roundsHost.emit('auction:end', { roomId: roundsRoom });
   roundsHost.disconnect();

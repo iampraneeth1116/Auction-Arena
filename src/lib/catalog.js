@@ -11,10 +11,10 @@ export const RATINGS = buildRatings(IPL_PLAYERS);
 export const ratingOf = (playerId) => RATINGS.get(playerId) ?? 0;
 
 // How many players go under the hammer. With the quick pool it's one squad per
-// franchise taking part plus 10 spares (the server works it out the same way at the start).
-export const QUICK_POOL_SPARES = 10;
+// franchise taking part plus 3 spares each (the server works it out the same way at the start).
+export const QUICK_POOL_SPARES_PER_TEAM = 3;
 export function auctionPoolSize({ auctionType, quickPool, franchises, squadLimit }) {
-  if (quickPool) return Math.max(1, franchises) * squadLimit + QUICK_POOL_SPARES;
+  if (quickPool) return Math.max(1, franchises) * (squadLimit + QUICK_POOL_SPARES_PER_TEAM);
   return MODE_META[auctionType]?.pool ?? IPL_PLAYERS.length;
 }
 

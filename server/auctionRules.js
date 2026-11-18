@@ -83,9 +83,9 @@ const clampScore = (n) => Math.min(100, Math.max(0, Math.round(n)));
 export const blendTeamScore = ({ aiScore, penalty, strength }) =>
   clampScore(0.5 * Math.max(0, clampScore(aiScore) - penalty) + 0.5 * strength);
 
-// Quick pool: just enough players for the franchises taking part, plus spares
-export const QUICK_POOL_SPARES = 10;
-export const quickPoolSize = (franchises, squadLimit) => Math.max(1, franchises) * squadLimit + QUICK_POOL_SPARES;
+// Quick pool: just enough players for the franchises taking part, plus a few spares for each
+export const QUICK_POOL_SPARES_PER_TEAM = 3;
+export const quickPoolSize = (franchises, squadLimit) => Math.max(1, franchises) * (squadLimit + QUICK_POOL_SPARES_PER_TEAM);
 
 // Draws that many players at random from the candidates, sharing the places out
 // by role in the same mix as the candidates

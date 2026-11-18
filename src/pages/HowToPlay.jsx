@@ -519,8 +519,8 @@ const Modes = () => (
 
     <Note icon={Timer} title="Quick pool (any mode)" tone="signal">
       For a shorter auction the host can turn on Quick pool, on the Host screen or in the lobby. Then only one
-      squad&rsquo;s worth of players per franchise taking part goes under the hammer, plus 10 spares: four franchises in
-      Classic 11 means 4 × 11 + 10 = 54 players, ten franchises in Mega means 260 instead of {FULL_LIST}. The count is
+      squad&rsquo;s worth of players per franchise taking part goes under the hammer, plus 3 spares for each: four
+      franchises in Classic 11 means 4 × (11 + 3) = 56 players, ten franchises in Mega means 280 instead of {FULL_LIST}. The count is
       made when the host presses Start. In Classic 11 and Sprint 5 a quick pool only draws this season&rsquo;s
       regulars, players with at least 5 IPL 2026 matches, from the top or every tier equally with Balanced player mix.
       Mega&rsquo;s 25-player squads need more players than that, so its quick pool is drawn like any shorter pool.
