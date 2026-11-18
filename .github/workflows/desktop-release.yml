@@ -28,10 +28,10 @@ jobs:
       - name: Start a draft release
         env:
           GH_TOKEN: ${{ github.token }}
+        # The notes say which file is for which computer and link each one: fill in this release
         run: |
-          gh release create "$GITHUB_REF_NAME" --draft --title "Auction Arena $GITHUB_REF_NAME" --notes "The Auction Arena desktop app for macOS (Apple Silicon and Intel), Windows and Linux.
-
-          First launch: on macOS, open System Settings > Privacy & Security and click Open Anyway. On Windows, click More info > Run anyway."
+          sed -e "s/{version}/${GITHUB_REF_NAME#v}/g" -e "s|{repo}|$GITHUB_REPOSITORY|g" .github/desktop-release-notes.md > "$RUNNER_TEMP/notes.md"
+          gh release create "$GITHUB_REF_NAME" --draft --title "Auction Arena $GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
 
   build:
     needs: draft
