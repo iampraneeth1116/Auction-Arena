@@ -14,7 +14,7 @@
     "start": "node server/index.js",
     "preview": "vite preview",
     "lint": "eslint .",
-    "test": "node tests/auction.e2e.mjs && node tests/arena.e2e.mjs && node tests/power-rankings.e2e.mjs && node tests/desktop-sign-in.e2e.mjs && node tests/desktop-updates.e2e.mjs",
+    "test": "node tests/auction.e2e.mjs && node tests/arena.e2e.mjs && node tests/power-rankings.e2e.mjs && node tests/desktop-sign-in.e2e.mjs && node tests/desktop-app.e2e.mjs",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

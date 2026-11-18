@@ -1,11 +1,54 @@
-// End-to-end: the banner the site shows inside an older copy of the desktop app. Covers reading
-// the app's version from its browser identification, comparing versions, and the server's
-// lookup of the newest release, against a stand-in for GitHub's Releases page.
+// End-to-end: what the site does inside the desktop app. The native notifications it asks the
+// app for (outbid, room chat) and how chat ones are spaced out; and the banner in an older copy
+// of the app: reading the app's version from its browser identification, comparing versions,
+// and the server's lookup of the newest release, against a stand-in for GitHub's Releases page.
 import http from 'node:http';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { createChecker, startServer } from './helpers.mjs';
 import { desktopAppVersion, isNewerVersion } from '../src/lib/desktopApp.js';
+import { chatTiming, clearChatNotifications, notifyChat, notifyDesktop } from '../src/lib/desktopNotify.js';
 
 const { check, failedCount, printSummary } = createChecker();
+
+// ─── Native notifications ───
+// The app's bridge, as the page sees it; shorter waits so the test runs quickly
+const shown = [];
+globalThis.window = { auctionArenaDesktop: { notify: (title, body) => shown.push({ title, body, at: Date.now() }) } };
+chatTiming.gapMs = 300;
+chatTiming.holdMs = 600;
+const TIMER_SLACK_MS = 5;
+
+notifyChat({ userName: 'Rahul', text: 'nice buy!', type: 'text' });
+await sleep(50);
+check('a chat message is notified straight away, saying who sent it', shown.length === 1 && shown[0].title === 'Rahul in the room chat' && shown[0].body === 'nice buy!', JSON.stringify(shown));
+notifyChat({ userName: 'Priya', text: 'what a steal', type: 'text' });
+notifyChat({ userName: 'Priya', text: 'https://media.giphy.com/media/abc/giphy.gif', type: 'gif' });
+await sleep(100);
+check('messages soon after wait their turn', shown.length === 1);
+await sleep(300);
+check('…then come as one notification, with the latest', shown.length === 2 && shown[1].title === '2 new messages in the room chat' && shown[1].body === 'Priya: sent a GIF', JSON.stringify(shown[1]));
+check('…no sooner than the gap between chat notifications', shown[1].at - shown[0].at >= chatTiming.gapMs - TIMER_SLACK_MS, `${shown[1].at - shown[0].at} ms`);
+
+await sleep(400);
+notifyDesktop('Outbid on Virat Kohli', 'MI went to ₹15.00 Cr');
+const outbid = shown[shown.length - 1];
+notifyChat({ userName: 'Rahul', text: 'haha', type: 'text' });
+await sleep(100);
+check('being outbid is notified straight away', outbid.title === 'Outbid on Virat Kohli' && shown[shown.length - 1] === outbid);
+await sleep(600);
+const afterOutbid = shown[shown.length - 1];
+check('chat just after an outbid waits, so it doesn\'t replace that notification', afterOutbid.title === 'Rahul in the room chat' && afterOutbid.at - outbid.at >= chatTiming.holdMs - TIMER_SLACK_MS, `${afterOutbid.at - outbid.at} ms`);
+
+const before = shown.length;
+notifyChat({ userName: 'Priya', text: 'bye', type: 'text' });
+clearChatNotifications();
+await sleep(chatTiming.holdMs + 100);
+check('leaving the room drops chat still waiting', shown.length === before);
+delete globalThis.window.auctionArenaDesktop;
+notifyChat({ userName: 'Priya', text: 'in a browser', type: 'text' });
+notifyDesktop('Outbid', 'in a browser');
+await sleep(chatTiming.gapMs + 100);
+check('outside the desktop app nothing is sent', shown.length === before);
 
 // ─── The app's version and comparing versions ───
 // What the v0.1.1 Mac app really sends (read from it with its debugger)

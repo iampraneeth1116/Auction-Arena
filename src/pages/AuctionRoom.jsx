@@ -41,6 +41,7 @@ import BidTrail from '../components/auction/BidTrail';
 import UpNext from '../components/auction/UpNext';
 import TeamBoard from '../components/auction/TeamBoard';
 import ActivityFeed from '../components/auction/ActivityFeed';
+import { notifyDesktop } from '../lib/desktopNotify';
 
 const IconButton = ({ icon: Icon, label, onClick, className }) => (
   <button
@@ -204,7 +205,7 @@ const AuctionRoom = () => {
       const message = `${serverLive.highBidderTeamId} went to ${formatPrice(serverLive.currentBid)}`;
       toast({ message: `Outbid: ${message}`, tone: 'error', duration: 2500 });
       // In the desktop app: a native notification too, for when the window isn't in front
-      window.auctionArenaDesktop?.notify?.(`Outbid on ${PLAYERS_BY_ID.get(serverLive.playerId)?.name ?? 'your player'}`, message);
+      notifyDesktop(`Outbid on ${PLAYERS_BY_ID.get(serverLive.playerId)?.name ?? 'your player'}`, message);
     }
   }, [serverLive, user?.uid, toast]);
 

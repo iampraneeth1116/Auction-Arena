@@ -1,5 +1,6 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
+import { clearChatNotifications, notifyChat } from '../lib/desktopNotify';
 import { connectSocket, emitWithAck, getServerTime, getSocket } from '../lib/socket';
 import { AuctionContext } from '../hooks/useAuction';
 import { useAuth } from '../hooks/useAuth';
@@ -23,6 +24,11 @@ export const AuctionProvider = ({ children }) => {
 
   // Room id → the leave waiting to be sent (see joinAuction)
   const pendingLeaves = useRef(new Map());
+  // Who's signed in, for the room subscription (which outlives renders) to tell their own messages apart
+  const userId = useRef(user?.uid);
+  useEffect(() => {
+    userId.current = user?.uid;
+  }, [user?.uid]);
 
   const team = user ? roomTeams.find(t => t.userId === user.uid) || null : null;
 
@@ -85,6 +91,10 @@ export const AuctionProvider = ({ children }) => {
     const onMessage = (message) => {
       if (!active || message.roomId !== normalizedId) return;
       setMessages(prev => (prev.some(m => m.id === message.id) ? prev : [...prev, message]));
+      // In the desktop app: someone else's chat, on the pages that show the chat
+      const chat = !message.type || message.type === 'text' || message.type === 'gif';
+      const chatShown = /^\/(lobby|auction)\//.test(window.location.pathname);
+      if (chat && chatShown && message.userId !== userId.current) notifyChat(message);
     };
 
     // The host removed this user: the room page shows why instead of the lobby
@@ -127,6 +137,7 @@ export const AuctionProvider = ({ children }) => {
       socket.off('chat:message', onMessage);
       socket.off('room:kicked', onKicked);
       socket.off('connect', join);
+      clearChatNotifications();
       // Leaving waits a moment: the next page may be this room's lobby, auction or results, and
       // leaving and rejoining in between reads as the host walking out, which pauses the room
       pendingLeaves.current.set(normalizedId, setTimeout(() => {
